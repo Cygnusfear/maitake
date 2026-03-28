@@ -14,13 +14,13 @@ import (
 
 const defaultTimeout = 10 * time.Second
 
-// RunHook executes .maitake/hooks/<hookName> with content on stdin.
-// Returns nil if the hook passes (exit 0) or doesn't exist.
+// RunHook executes a hook by name. Checks repo-local first (.maitake/hooks/),
+// then falls back to global (~/.maitake/hooks/).
+// Returns nil if the hook passes (exit 0) or doesn't exist anywhere.
 // Returns an error with stderr content if the hook rejects (non-zero exit).
 func RunHook(maitakeDir, hookName string, content []byte, env map[string]string) error {
-	hookPath := filepath.Join(maitakeDir, "hooks", hookName)
-
-	if !HookExists(maitakeDir, hookName) {
+	hookPath := resolveHookPath(maitakeDir, hookName)
+	if hookPath == "" {
 		return nil
 	}
 
@@ -50,14 +50,45 @@ func RunHook(maitakeDir, hookName string, content []byte, env map[string]string)
 	return nil
 }
 
-// HookExists checks if a hook is installed and executable.
+// HookExists checks if a hook is installed and executable (repo-local or global).
 func HookExists(maitakeDir, hookName string) bool {
-	hookPath := filepath.Join(maitakeDir, "hooks", hookName)
-	info, err := os.Stat(hookPath)
+	return resolveHookPath(maitakeDir, hookName) != ""
+}
+
+// resolveHookPath returns the path to a hook, checking repo-local first, then global.
+// Returns empty string if the hook doesn't exist anywhere.
+func resolveHookPath(maitakeDir, hookName string) string {
+	// 1. Repo-local: .maitake/hooks/<name>
+	local := filepath.Join(maitakeDir, "hooks", hookName)
+	if isExecutableFile(local) {
+		return local
+	}
+
+	// 2. Global: ~/.maitake/hooks/<name>
+	if globalDir := globalHooksDir(); globalDir != "" {
+		global := filepath.Join(globalDir, hookName)
+		if isExecutableFile(global) {
+			return global
+		}
+	}
+
+	return ""
+}
+
+// globalHooksDir returns ~/.maitake/hooks/ or empty string if home can't be resolved.
+func globalHooksDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".maitake", "hooks")
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
-	// Check it's a file and executable
 	return !info.IsDir() && info.Mode()&0111 != 0
 }
 
