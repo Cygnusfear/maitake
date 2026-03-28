@@ -1,60 +1,70 @@
 ---
 name: mai-constraint
-description: Use when setting or checking project rules that all agents must follow. Constraints are notes that never close (until the rule changes).
+description: Use when setting or checking project rules that all agents must follow. Constraints show up in mai context alongside tickets and warnings. They stay open until the rule changes.
 ---
 
 # Mai Constraint — Project Rules
 
-## What constraints are
-
-Constraints are hard rules attached to files or the project root. They show up in `mai context` alongside tickets and warnings. Every agent sees them before touching the file.
+Constraints are hard rules attached to files, directories, or the project. Every agent sees them when they run `mai context`.
 
 ## Setting constraints
 
 ```bash
-# File-level constraint
+# On a specific file
 mai create "Must be retryable" -k constraint --target src/http.ts \
-  -d "All HTTP calls must have retry with exponential backoff and jitter."
+  -d "All HTTP calls must retry with exponential backoff and jitter."
 
-# Directory-level constraint (targets a path prefix)
+# On a directory
 mai create "No direct DB access" -k constraint --target src/data/ \
-  -d "All database access goes through the repository layer. No raw SQL in handlers."
+  -d "All database access goes through the repository layer. No raw SQL."
 
-# Project-level constraint (no target)
+# Project-wide (no target)
 mai create "All public APIs need auth" -k constraint \
-  -d "Every endpoint must validate the auth token. No anonymous access except /health."
+  -d "Every endpoint validates the auth token. No anonymous access except /health."
 ```
 
-## Checking constraints
-
-Agents see constraints when they run context:
+## How agents see them
 
 ```bash
 mai context src/http.ts
 # → con-1234 [constraint] (open) Must be retryable
-# →   All HTTP calls must have retry with exponential backoff and jitter.
+# →   All HTTP calls must retry with exponential backoff and jitter.
 # → tre-5c4a [ticket] (in_progress) Fix retry logic
-```
 
-To see all constraints:
-
-```bash
 mai ls -k constraint
+# → con-1234 [open] Must be retryable
+# → con-5678 [open] No direct DB access
+# → con-9012 [open] All public APIs need auth
 ```
 
 ## Updating constraints
 
-Constraints are notes — update them by closing the old one and creating a new one:
+Close the old one with a reason, create the new one:
 
 ```bash
-mai close con-1234 -m "Replaced: retry is now handled by the HTTP middleware"
+mai close con-1234 -m "Replaced: retry now handled by HTTP middleware"
 mai create "Retry handled by middleware" -k constraint --target src/http.ts \
-  -d "Do not add retry logic in individual handlers. The middleware handles it."
+  -d "Do not add retry in handlers. The middleware does it."
+```
+
+## Warnings vs constraints
+
+| | Warning | Constraint |
+|---|---|---|
+| Purpose | "watch out for this" | "you must do this" |
+| Duration | until the fragile thing is fixed | until the rule changes |
+| Severity | advisory | mandatory |
+| Example | "Token cache has a race condition" | "All HTTP calls must retry" |
+
+```bash
+mai warn src/auth.ts "Token cache race condition — hold mutex during refresh"
+mai create "Must hold mutex during token operations" -k constraint --target src/auth.ts \
+  -d "All token cache reads and writes must hold the refresh mutex."
 ```
 
 ## Rules
 
-1. **Constraints never close** unless the rule genuinely changes.
-2. **Be specific.** "Write good code" is not a constraint. "All HTTP calls must retry with backoff" is.
-3. **Target the right scope.** File-level for file-specific rules, no target for project-wide rules.
-4. **Agents must respect constraints.** If `mai context` shows a constraint, follow it. If you disagree, discuss with the human — don't silently violate it.
+1. **Constraints stay open** unless the rule genuinely changes.
+2. **Be specific.** Not "write good code." Yes "all HTTP calls must retry with backoff."
+3. **Target the right scope.** File for file rules, no target for project rules.
+4. **Agents must respect constraints.** If `mai context` shows one, follow it. Disagree? Discuss with the human first.
