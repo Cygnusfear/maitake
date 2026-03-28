@@ -27,8 +27,8 @@ func runDocsSync(e notes.Engine, args []string) {
 	// Read docs dir from .maitake/config if not specified
 	if cfg.Dir == "" {
 		maiCfg := e.GetConfig()
-		if maiCfg.DocsDir != "" {
-			cfg.Dir = maiCfg.DocsDir
+		if maiCfg.Docs.Dir != "" {
+			cfg.Dir = maiCfg.Docs.Dir
 		}
 	}
 

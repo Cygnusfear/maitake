@@ -159,6 +159,9 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	// Auto-push to remote (debounced — coalesces rapid writes)
 	e.schedulePush(ref, note.ID)
 
+	// Auto-sync docs if configured
+	e.autoSyncDoc(note.ID)
+
 	return note, nil
 }
 
@@ -253,6 +256,9 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 
 	// Auto-push to remote (debounced — coalesces rapid writes)
 	e.schedulePush(ref, fullID)
+
+	// Auto-sync docs if configured
+	e.autoSyncDoc(fullID)
 
 	return note, nil
 }
@@ -524,12 +530,12 @@ func (e *RealEngine) GetConfig() Config {
 
 // Sync does a manual fetch + merge + push for the configured remote.
 func (e *RealEngine) Sync() error {
-	if e.config.Remote == "" {
+	if e.config.Sync.Remote == "" {
 		return fmt.Errorf("no remote configured — run mai init --remote <name>")
 	}
 
 	ref := string(e.activeRef())
-	remote := e.config.Remote
+	remote := e.config.Sync.Remote
 
 	// Pull (fetch + merge)
 	if err := e.repo.PullNotes(remote, ref); err != nil {
@@ -549,9 +555,31 @@ func (e *RealEngine) Sync() error {
 	return nil
 }
 
+// autoSyncDoc materializes a doc note to disk if docs.sync is "auto".
+func (e *RealEngine) autoSyncDoc(noteID string) {
+	if e.config.Docs.Sync != "auto" {
+		return
+	}
+
+	state := e.index.States[noteID]
+	if state == nil || state.Kind != "doc" {
+		return
+	}
+
+	targetPath := docTargetPath(state, e.config.Docs.Dir)
+	absPath := filepath.Join(e.repoPath, targetPath)
+
+	if state.Status == "closed" {
+		os.Remove(absPath)
+		return
+	}
+
+	writeDocFile(absPath, state.ID, state.Body)
+}
+
 // schedulePush debounces auto-push. Multiple writes within 500ms coalesce into one push.
 func (e *RealEngine) schedulePush(ref git.NotesRef, noteID string) {
-	if e.config.Remote == "" {
+	if e.config.Sync.Remote == "" {
 		return
 	}
 
@@ -576,11 +604,11 @@ func (e *RealEngine) schedulePush(ref git.NotesRef, noteID string) {
 // On rejection, fetches + merges (cat_sort_uniq) + retries once.
 // Failures warn to stderr but never block the write.
 func (e *RealEngine) autoPush(ref git.NotesRef, noteID string) {
-	if e.config.Remote == "" {
+	if e.config.Sync.Remote == "" {
 		return
 	}
 
-	remote := e.config.Remote
+	remote := e.config.Sync.Remote
 
 	// Check blocked hosts
 	remotes, err := e.repo.Remotes()
@@ -604,7 +632,7 @@ func (e *RealEngine) autoPush(ref git.NotesRef, noteID string) {
 
 	// Check blocked hosts — need to get remote URL
 	// Use git config to get the URL
-	if len(e.config.BlockedHosts) > 0 {
+	if len(e.config.Sync.BlockedHosts) > 0 {
 		// We can't easily get the remote URL through the Repo interface,
 		// so we check via a lightweight git config call. For now, trust
 		// the blocked-hosts list and skip the URL check — the remote name

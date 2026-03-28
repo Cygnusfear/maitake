@@ -46,19 +46,19 @@ func runInit(args []string) {
 	// Write config
 	cfg := notes.ReadConfig(maitakeDir)
 	if remote != "" {
-		cfg.Remote = remote
+		cfg.Sync.Remote = remote
 	}
 	if len(blocked) > 0 {
-		cfg.BlockedHosts = blocked
+		cfg.Sync.BlockedHosts = blocked
 	}
 	if err := notes.WriteConfig(maitakeDir, cfg); err != nil {
 		fatal("init config: %v", err)
 	}
-	if cfg.Remote != "" {
-		fmt.Printf("Auto-push to remote: %s\n", cfg.Remote)
+	if cfg.Sync.Remote != "" {
+		fmt.Printf("Auto-push to remote: %s\n", cfg.Sync.Remote)
 	}
-	if len(cfg.BlockedHosts) > 0 {
-		fmt.Printf("Blocked hosts: %s\n", strings.Join(cfg.BlockedHosts, ", "))
+	if len(cfg.Sync.BlockedHosts) > 0 {
+		fmt.Printf("Blocked hosts: %s\n", strings.Join(cfg.Sync.BlockedHosts, ", "))
 	}
 
 	// Add .maitake/ to .gitignore if not already there

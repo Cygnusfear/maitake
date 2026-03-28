@@ -1,3 +1,6 @@
+---
+mai-id: mai-ljw4
+---
 # Maitake — Layer Architecture
 
 ## The full picture
@@ -198,3 +201,4 @@ Eval log format:
 | 8 | jj support, migration from .tickets/ | Ecosystem compat |
 
 Phases 1-3 are the critical path. Phase 5 (eval) should start in parallel with Phase 3 so we're measuring agent behavior from the first real usage.
+

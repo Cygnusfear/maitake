@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-// DocsConfig controls doc materialization.
-type DocsConfig struct {
-	Dir string // relative path from repo root (default: "docs")
-}
-
 // DocFile represents a materialized doc on disk.
 type DocFile struct {
 	Path    string // relative to repo root

@@ -1,3 +1,6 @@
+---
+mai-id: mai-yh4w
+---
 # Maitake — Design Specification
 
 ## Overview
@@ -611,3 +614,4 @@ mai migrate-legacy [--dry-run]
 ### 8.2 Backward compatibility
 
 During transition, `mai` checks both refs/notes and `.tickets/`. Unified view. Gradual migration.
+

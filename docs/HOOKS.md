@@ -1,3 +1,6 @@
+---
+mai-id: mai-epky
+---
 # Maitake — Hook System
 
 ## Overview
@@ -188,3 +191,4 @@ func HookExists(maitakeDir string, hookName string) bool
 ```
 
 That's the entire package.
+

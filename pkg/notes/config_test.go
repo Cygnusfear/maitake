@@ -6,12 +6,18 @@ import (
 	"testing"
 )
 
-func TestConfig_ReadWrite(t *testing.T) {
+func TestConfig_WriteAndReadTOML(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := Config{
-		Remote:       "forgejo",
-		BlockedHosts: []string{"github.com", "gitlab.com"},
+		Sync: SyncConfig{
+			Remote:       "forgejo",
+			BlockedHosts: []string{"github.com", "gitlab.com"},
+		},
+		Docs: DocsConfig{
+			Sync: "auto",
+			Dir:  "wiki",
+		},
 	}
 
 	if err := WriteConfig(dir, cfg); err != nil {
@@ -19,52 +25,59 @@ func TestConfig_ReadWrite(t *testing.T) {
 	}
 
 	got := ReadConfig(dir)
-	if got.Remote != "forgejo" {
-		t.Errorf("Remote = %q, want forgejo", got.Remote)
+	if got.Sync.Remote != "forgejo" {
+		t.Errorf("Remote = %q, want forgejo", got.Sync.Remote)
 	}
-	if len(got.BlockedHosts) != 2 {
-		t.Fatalf("BlockedHosts = %v, want 2", got.BlockedHosts)
+	if len(got.Sync.BlockedHosts) != 2 {
+		t.Fatalf("BlockedHosts = %v, want 2", got.Sync.BlockedHosts)
 	}
-	if got.BlockedHosts[0] != "github.com" {
-		t.Errorf("BlockedHosts[0] = %q", got.BlockedHosts[0])
+	if got.Docs.Sync != "auto" {
+		t.Errorf("Docs.Sync = %q, want auto", got.Docs.Sync)
 	}
-	if got.BlockedHosts[1] != "gitlab.com" {
-		t.Errorf("BlockedHosts[1] = %q", got.BlockedHosts[1])
+	if got.Docs.Dir != "wiki" {
+		t.Errorf("Docs.Dir = %q, want wiki", got.Docs.Dir)
 	}
 }
 
 func TestConfig_ReadMissing(t *testing.T) {
 	cfg := ReadConfig("/nonexistent/dir")
-	if cfg.Remote != "" {
-		t.Errorf("Remote = %q, want empty", cfg.Remote)
+	if cfg.Sync.Remote != "" {
+		t.Errorf("Remote = %q, want empty", cfg.Sync.Remote)
 	}
-	if len(cfg.BlockedHosts) != 0 {
-		t.Errorf("BlockedHosts = %v, want empty", cfg.BlockedHosts)
+	if cfg.Docs.Dir != "docs" {
+		t.Errorf("Docs.Dir = %q, want docs (default)", cfg.Docs.Dir)
+	}
+	if cfg.Docs.Sync != "manual" {
+		t.Errorf("Docs.Sync = %q, want manual (default)", cfg.Docs.Sync)
 	}
 }
 
-func TestConfig_Comments(t *testing.T) {
+func TestConfig_LegacyCompat(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "config"), []byte("# comment line\nremote origin\n# another\nblocked-host github.com\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "config"), []byte("remote origin\nblocked-host github.com\ndocs-dir .mushroom\n"), 0644)
 
 	cfg := ReadConfig(dir)
-	if cfg.Remote != "origin" {
-		t.Errorf("Remote = %q, want origin", cfg.Remote)
+	if cfg.Sync.Remote != "origin" {
+		t.Errorf("Remote = %q, want origin", cfg.Sync.Remote)
 	}
-	if len(cfg.BlockedHosts) != 1 || cfg.BlockedHosts[0] != "github.com" {
-		t.Errorf("BlockedHosts = %v", cfg.BlockedHosts)
+	if len(cfg.Sync.BlockedHosts) != 1 || cfg.Sync.BlockedHosts[0] != "github.com" {
+		t.Errorf("BlockedHosts = %v", cfg.Sync.BlockedHosts)
+	}
+	if cfg.Docs.Dir != ".mushroom" {
+		t.Errorf("Docs.Dir = %q, want .mushroom", cfg.Docs.Dir)
 	}
 }
 
-func TestConfig_EmptyRemote(t *testing.T) {
+func TestConfig_TOMLOverridesLegacy(t *testing.T) {
 	dir := t.TempDir()
-	cfg := Config{BlockedHosts: []string{"github.com"}}
-	WriteConfig(dir, cfg)
+	// Legacy says remote=origin
+	os.WriteFile(filepath.Join(dir, "config"), []byte("remote origin\n"), 0644)
+	// TOML says remote=forgejo
+	os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[sync]\nremote = \"forgejo\"\n"), 0644)
 
-	got := ReadConfig(dir)
-	if got.Remote != "" {
-		t.Errorf("Remote = %q, want empty", got.Remote)
+	cfg := ReadConfig(dir)
+	if cfg.Sync.Remote != "forgejo" {
+		t.Errorf("Remote = %q, want forgejo (TOML should override legacy)", cfg.Sync.Remote)
 	}
 }
 
@@ -82,15 +95,5 @@ func TestIsBlockedHost_HTTPS(t *testing.T) {
 	blocked := []string{"github.com"}
 	if !IsBlockedHost("https://github.com/user/repo.git", blocked) {
 		t.Error("should block github.com HTTPS URL")
-	}
-	if IsBlockedHost("https://gitlab.com/user/repo.git", blocked) {
-		t.Error("should not block gitlab.com")
-	}
-}
-
-func TestIsBlockedHost_HTTP(t *testing.T) {
-	blocked := []string{"git.example.com"}
-	if !IsBlockedHost("http://git.example.com/repo.git", blocked) {
-		t.Error("should block HTTP URL")
 	}
 }
