@@ -1,21 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 #
-# post-push hook: sync maitake tickets to Forgejo Issues.
-# Fires after every successful auto-push of refs/notes/maitake.
+# post-push hook: bidirectional sync between maitake tickets and Forgejo Issues.
 #
-# Env vars provided by mai:
-#   MAI_REMOTE     — remote name (e.g. "forgejo")
-#   MAI_REF        — ref that was pushed
-#   MAI_REPO_PATH  — absolute path to the repo
+# mai → Forgejo: create/update issues, push comments
+# Forgejo → mai: sync status changes, pull comments
 #
-# Required env:
-#   FORGEJO_TOKEN  — API token
-#
-# Optional env (auto-detected from remote URL if not set):
-#   FORGEJO_URL    — base URL (e.g. https://git.manad.app)
-#   FORGEJO_OWNER  — repo owner
-#   FORGEJO_REPO   — repo name
+# Env vars from mai:  MAI_REMOTE, MAI_REF, MAI_REPO_PATH
+# Required env:       FORGEJO_TOKEN
+# Optional env:       FORGEJO_URL, FORGEJO_OWNER, FORGEJO_REPO (auto-detected from remote)
 #
 # Install:
 #   cp examples/hooks/post-push-forgejo ~/.maitake/hooks/post-push
@@ -23,11 +16,13 @@ set -uo pipefail
 
 REPO_PATH="${MAI_REPO_PATH:-.}"
 MAP_FILE="$REPO_PATH/.maitake/forgejo-issue-map"
+CURSOR_FILE="$REPO_PATH/.maitake/forgejo-comment-cursor"
 
-mkdir -p "$(dirname "$MAP_FILE")"
-touch "$MAP_FILE"
+mkdir -p "$REPO_PATH/.maitake"
+touch "$MAP_FILE" "$CURSOR_FILE"
 
-# Auto-detect owner/repo from remote URL (always, even when FORGEJO_URL is overridden)
+# ── Auto-detect from remote URL ───────────────────────────────────────────
+
 REMOTE_URL=$(cd "$REPO_PATH" && git remote get-url "${MAI_REMOTE:-origin}" 2>/dev/null) || true
 if [[ "${REMOTE_URL:-}" =~ ^https?://([^/]+)/([^/]+)/([^/.]+) ]]; then
     FORGEJO_URL="${FORGEJO_URL:-https://${BASH_REMATCH[1]}}"
@@ -35,33 +30,94 @@ if [[ "${REMOTE_URL:-}" =~ ^https?://([^/]+)/([^/]+)/([^/.]+) ]]; then
     FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
 elif [[ "${REMOTE_URL:-}" =~ ^git@([^:]+):([^/]+)/([^/.]+) ]]; then
     SSH_HOST="${BASH_REMATCH[1]}"
-    API_HOST="${SSH_HOST//-ssh/}"
-    FORGEJO_URL="${FORGEJO_URL:-https://${API_HOST}}"
+    FORGEJO_URL="${FORGEJO_URL:-https://${SSH_HOST//-ssh/}}"
     FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
     FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
 fi
 
-if [ -z "${FORGEJO_URL:-}" ] || [ -z "${FORGEJO_TOKEN:-}" ]; then
-    exit 0  # silently skip — not configured
-fi
-if [ -z "${FORGEJO_OWNER:-}" ] || [ -z "${FORGEJO_REPO:-}" ]; then
-    exit 0
-fi
+[ -z "${FORGEJO_URL:-}" ] || [ -z "${FORGEJO_TOKEN:-}" ] && exit 0
+[ -z "${FORGEJO_OWNER:-}" ] || [ -z "${FORGEJO_REPO:-}" ] && exit 0
 
 API="${FORGEJO_URL}/api/v1/repos/${FORGEJO_OWNER}/${FORGEJO_REPO}"
 
-lookup_issue() {
-    grep "^${1}=" "$MAP_FILE" 2>/dev/null | cut -d= -f2
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+lookup()      { grep "^${1}=" "$2" 2>/dev/null | cut -d= -f2; }
+save_entry()  {
+    local file="$3"
+    grep -v "^${1}=" "$file" > "${file}.tmp" 2>/dev/null || true
+    echo "${1}=${2}" >> "${file}.tmp"
+    mv "${file}.tmp" "$file"
 }
 
-save_mapping() {
-    grep -v "^${1}=" "$MAP_FILE" > "${MAP_FILE}.tmp" 2>/dev/null || true
-    echo "${1}=${2}" >> "${MAP_FILE}.tmp"
-    mv "${MAP_FILE}.tmp" "$MAP_FILE"
-}
+forgejo_get()  { curl -s -X GET  "${API}${1}" -H "Authorization: token ${FORGEJO_TOKEN}" 2>/dev/null; }
+forgejo_post() { curl -s -X POST "${API}${1}" -H "Authorization: token ${FORGEJO_TOKEN}" -H "Content-Type: application/json" -d "$2" 2>/dev/null; }
+forgejo_patch(){ curl -s -X PATCH "${API}${1}" -H "Authorization: token ${FORGEJO_TOKEN}" -H "Content-Type: application/json" -d "$2" 2>/dev/null; }
 
-# Sync all tickets
-mai -C "$REPO_PATH" --json ls --status=all | jq -c '.[]' | while read -r ticket; do
+# ── Map must exist (built by: FORGEJO_URL=... FORGEJO_TOKEN=... mai-forgejo-map) ──
+# If no map file, only new tickets will be created (no matching to existing issues).
+# Run the map builder once after migration to link existing Forgejo issues.
+
+# ── Forgejo → mai (pull changes, skip the ticket that just changed) ────────
+
+# The ticket that triggered this hook was just modified in mai.
+# Don't pull Forgejo state for it — that would undo the change we're about to push.
+SYNC_IDS=()
+if [ -z "${MAI_NOTE_ID:-}" ]; then
+    # Manual sync — pull all
+    while IFS='=' read -r _id _num; do
+        [ -n "$_id" ] && SYNC_IDS+=("$_id")
+    done < "$MAP_FILE"
+fi
+
+for MAI_ID in "${SYNC_IDS[@]}"; do
+    ISSUE_NUM=$(lookup "$MAI_ID" "$MAP_FILE")
+    [ -z "$ISSUE_NUM" ] && continue
+    [ -z "$MAI_ID" ] || [ -z "$ISSUE_NUM" ] && continue
+
+    MAI_STATUS=$(mai -C "$REPO_PATH" --json show "$MAI_ID" 2>/dev/null | jq -r '.status // empty') || continue
+    [ -z "$MAI_STATUS" ] && continue
+
+    FORGEJO_STATE=$(forgejo_get "/issues/${ISSUE_NUM}" | jq -r '.state // empty' 2>/dev/null) || continue
+    [ -z "$FORGEJO_STATE" ] && continue
+
+    # Sync status
+    if [ "$FORGEJO_STATE" = "closed" ] && [ "$MAI_STATUS" != "closed" ]; then
+        mai -C "$REPO_PATH" close "$MAI_ID" -m "Closed on Forgejo (#${ISSUE_NUM})" 2>/dev/null || true
+    elif [ "$FORGEJO_STATE" = "open" ] && [ "$MAI_STATUS" = "closed" ]; then
+        mai -C "$REPO_PATH" reopen "$MAI_ID" 2>/dev/null || true
+    fi
+
+    # Pull new Forgejo comments → mai
+    LAST_SEEN=$(lookup "$MAI_ID" "$CURSOR_FILE")
+    COMMENTS=$(forgejo_get "/issues/${ISSUE_NUM}/comments?limit=50") || continue
+    LATEST_COMMENT_ID=""
+
+    echo "$COMMENTS" | jq -c '.[]' 2>/dev/null | while read -r comment; do
+        CID=$(echo "$comment" | jq -r '.id')
+        CBODY=$(echo "$comment" | jq -r '.body // ""')
+        CUSER=$(echo "$comment" | jq -r '.user.login // "unknown"')
+
+        [ -n "$LAST_SEEN" ] && [ "$CID" -le "$LAST_SEEN" ] 2>/dev/null && continue
+        echo "$CBODY" | grep -q '^\*\*mai:\*\*' 2>/dev/null && continue
+
+        mai -C "$REPO_PATH" add-note "$MAI_ID" "[forgejo @${CUSER}] ${CBODY}" 2>/dev/null || true
+        echo "$CID"
+    done | tail -1 | read -r LATEST_COMMENT_ID || true
+
+    [ -n "$LATEST_COMMENT_ID" ] && save_entry "$MAI_ID" "$LATEST_COMMENT_ID" "$CURSOR_FILE"
+done
+
+# ── mai → Forgejo (push local changes) ────────────────────────────────────
+
+# If MAI_NOTE_ID is set, only push that ticket. Otherwise push all.
+if [ -n "${MAI_NOTE_ID:-}" ]; then
+    PUSH_FILTER=".[] | select(.id == \"${MAI_NOTE_ID}\")"
+else
+    PUSH_FILTER=".[]"
+fi
+
+mai -C "$REPO_PATH" --json ls --status=all | jq -c "$PUSH_FILTER" | while read -r ticket; do
     ID=$(echo "$ticket" | jq -r '.id')
     TITLE=$(echo "$ticket" | jq -r '.title // .id')
     STATUS=$(echo "$ticket" | jq -r '.status')
@@ -69,37 +125,42 @@ mai -C "$REPO_PATH" --json ls --status=all | jq -c '.[]' | while read -r ticket;
     STATE="open"
     [ "$STATUS" = "closed" ] && STATE="closed"
 
-    ISSUE_NUMBER=$(lookup_issue "$ID")
+    ISSUE_NUMBER=$(lookup "$ID" "$MAP_FILE")
 
     if [ -n "$ISSUE_NUMBER" ]; then
         # Update existing issue
-        curl -s -X PATCH "${API}/issues/${ISSUE_NUMBER}" \
-            -H "Authorization: token ${FORGEJO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg t "$TITLE" --arg s "$STATE" '{title: $t, state: $s}')" \
-            > /dev/null 2>&1 || true
+        forgejo_patch "/issues/${ISSUE_NUMBER}" \
+            "$(jq -n --arg t "$TITLE" --arg s "$STATE" '{title: $t, state: $s}')" > /dev/null 2>&1 || true
+
+        # Push new mai comments → Forgejo
+        MAI_COMMENTS=$(mai -C "$REPO_PATH" --json show "$ID" 2>/dev/null | jq -c '.comments // []') || true
+        LAST_PUSHED=$(lookup "${ID}-pushed" "$CURSOR_FILE")
+        IDX=0
+        echo "$MAI_COMMENTS" | jq -c '.[]' 2>/dev/null | while read -r mc; do
+            IDX=$((IDX + 1))
+            [ -n "$LAST_PUSHED" ] && [ "$IDX" -le "$LAST_PUSHED" ] 2>/dev/null && continue
+            MC_BODY=$(echo "$mc" | jq -r '.body // ""')
+            echo "$MC_BODY" | grep -q '^\[forgejo @' 2>/dev/null && continue
+            MC_BRANCH=$(echo "$mc" | jq -r '.branch // ""')
+            BTAG=""
+            [ -n "$MC_BRANCH" ] && BTAG=" (branch: \`${MC_BRANCH}\`)"
+            forgejo_post "/issues/${ISSUE_NUMBER}/comments" \
+                "$(jq -n --arg b "**mai:**${BTAG} ${MC_BODY}" '{body: $b}')" > /dev/null 2>&1 || true
+        done
+        TOTAL=$(echo "$MAI_COMMENTS" | jq 'length' 2>/dev/null) || true
+        [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ] && save_entry "${ID}-pushed" "$TOTAL" "$CURSOR_FILE"
     else
         # Create new issue
-        BODY=$(mai -C "$REPO_PATH" --json show "$ID" | jq -r '.body // ""')
+        BODY=$(mai -C "$REPO_PATH" --json show "$ID" 2>/dev/null | jq -r '.body // ""')
         FULL_BODY=$(printf '**mai:** `%s`\n\n%s' "$ID" "$BODY")
 
-        RESULT=$(curl -s -X POST "${API}/issues" \
-            -H "Authorization: token ${FORGEJO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg t "$TITLE" --arg b "$FULL_BODY" '{title: $t, body: $b}')" \
-            2>&1) || true
+        RESULT=$(forgejo_post "/issues" \
+            "$(jq -n --arg t "$TITLE" --arg b "$FULL_BODY" '{title: $t, body: $b}')" 2>&1) || true
 
-        ISSUE_NUMBER=$(echo "$RESULT" | jq -r '.number // empty' 2>/dev/null) || true
-        if [ -n "$ISSUE_NUMBER" ]; then
-            save_mapping "$ID" "$ISSUE_NUMBER"
-
-            if [ "$STATE" = "closed" ]; then
-                curl -s -X PATCH "${API}/issues/${ISSUE_NUMBER}" \
-                    -H "Authorization: token ${FORGEJO_TOKEN}" \
-                    -H "Content-Type: application/json" \
-                    -d '{"state":"closed"}' \
-                    > /dev/null 2>&1 || true
-            fi
+        NEW_NUM=$(echo "$RESULT" | jq -r '.number // empty' 2>/dev/null) || true
+        if [ -n "$NEW_NUM" ]; then
+            save_entry "$ID" "$NEW_NUM" "$MAP_FILE"
+            [ "$STATE" = "closed" ] && forgejo_patch "/issues/${NEW_NUM}" '{"state":"closed"}' > /dev/null 2>&1 || true
         fi
     fi
 done

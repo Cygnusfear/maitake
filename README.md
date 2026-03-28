@@ -1,3 +1,5 @@
+<img src="assets/logo.png"/>
+
 # maitake 🍄
 
 Git-native tickets, notes, and code review. One binary, zero dependencies beyond git. Storage lives in `refs/notes/maitake` — invisible to your working tree, pushed only where you choose.
@@ -36,12 +38,12 @@ Closed from `main` — the branch was merged. The event stream tells the story.
 
 ### Create
 
-| Command | What |
-|---|---|
-| `mai ticket [title] [opts]` | Ticket (task by default) |
-| `mai warn <path> [message]` | Warning on a file |
+| Command                     | What                          |
+| --------------------------- | ----------------------------- |
+| `mai ticket [title] [opts]` | Ticket (task by default)      |
+| `mai warn <path> [message]` | Warning on a file             |
 | `mai review [title] [opts]` | Review artifact (born closed) |
-| `mai create [title] [opts]` | Any kind — use `-k` |
+| `mai create [title] [opts]` | Any kind — use `-k`           |
 
 **Options:** `-k kind`, `-t type`, `-p priority`, `-a assignee`, `--tags a,b`, `--target path`, `-d description`
 
@@ -129,9 +131,9 @@ mai sync    # fetch + merge + push
 
 Hooks live in `.maitake/hooks/` (per-repo) or `~/.maitake/hooks/` (global fallback). Per-repo wins when both exist.
 
-| Hook | When | Receives |
-|---|---|---|
-| `pre-write` | Before every note write | JSON note on stdin |
+| Hook        | When                             | Receives                                          |
+| ----------- | -------------------------------- | ------------------------------------------------- |
+| `pre-write` | Before every note write          | JSON note on stdin                                |
 | `post-push` | After every successful auto-push | `MAI_REMOTE`, `MAI_REF`, `MAI_REPO_PATH` env vars |
 
 Exit non-zero from `pre-write` to reject the write. `post-push` failures warn but don't block.

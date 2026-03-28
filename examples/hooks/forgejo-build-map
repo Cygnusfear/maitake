@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -uo pipefail
+#
+# One-time: build the forgejo-issue-map by scanning existing Forgejo issues
+# and matching them to maitake tickets by **mai:**/**tk:** markers or by title.
+#
+# Run once after migrating from tk-sync:
+#   FORGEJO_URL=https://git.manad.app FORGEJO_TOKEN=... ./forgejo-build-map
+#
+# Requires: FORGEJO_URL, FORGEJO_TOKEN, mai, jq, curl
+
+REPO_PATH="${MAI_REPO_PATH:-$(pwd)}"
+MAP_FILE="$REPO_PATH/.maitake/forgejo-issue-map"
+
+mkdir -p "$REPO_PATH/.maitake"
+
+# Auto-detect owner/repo from remote
+REMOTE_URL=$(cd "$REPO_PATH" && git remote get-url "${MAI_REMOTE:-origin}" 2>/dev/null) || true
+if [[ "${REMOTE_URL:-}" =~ ^https?://([^/]+)/([^/]+)/([^/.]+) ]]; then
+    FORGEJO_URL="${FORGEJO_URL:-https://${BASH_REMATCH[1]}}"
+    FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
+    FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
+elif [[ "${REMOTE_URL:-}" =~ ^git@([^:]+):([^/]+)/([^/.]+) ]]; then
+    FORGEJO_URL="${FORGEJO_URL:-https://${BASH_REMATCH[1]//-ssh/}}"
+    FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
+    FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
+fi
+
+if [ -z "${FORGEJO_URL:-}" ] || [ -z "${FORGEJO_TOKEN:-}" ]; then
+    echo "Set FORGEJO_URL and FORGEJO_TOKEN" >&2; exit 1
+fi
+if [ -z "${FORGEJO_OWNER:-}" ] || [ -z "${FORGEJO_REPO:-}" ]; then
+    echo "Could not detect owner/repo from remote" >&2; exit 1
+fi
+
+API="${FORGEJO_URL}/api/v1/repos/${FORGEJO_OWNER}/${FORGEJO_REPO}"
+
+echo "Scanning ${FORGEJO_URL}/${FORGEJO_OWNER}/${FORGEJO_REPO}..."
+
+# Clear existing map
+> "$MAP_FILE"
+TITLES_TMP=$(mktemp)
+MARKER_COUNT=0
+TITLE_COUNT=0
+
+PAGE=1
+while true; do
+    ISSUES=$(curl -s -X GET "${API}/issues?limit=50&state=all&type=issues&page=${PAGE}" \
+        -H "Authorization: token ${FORGEJO_TOKEN}" 2>/dev/null) || break
+    COUNT=$(echo "$ISSUES" | jq 'length' 2>/dev/null) || break
+    [ "$COUNT" -eq 0 ] && break
+    echo "  page $PAGE: $COUNT issues"
+
+    echo "$ISSUES" | jq -r '.[] | "\(.number)\t\(.title)\t\(.body // "")"' 2>/dev/null | while IFS=$'\t' read -r num title body; do
+        MAI_ID=$(echo "$body" | grep -oE '\*\*(mai|tk):\*\* `([^`]+)`' | head -1 | grep -oE '`[^`]+`' | tr -d '`') || true
+        if [ -n "$MAI_ID" ]; then
+            echo "${MAI_ID}=${num}" >> "$MAP_FILE"
+        else
+            printf '%s\t%s\n' "$num" "$title" >> "$TITLES_TMP"
+        fi
+    done
+    PAGE=$((PAGE + 1))
+done
+
+MARKER_COUNT=$(wc -l < "$MAP_FILE" | tr -d ' ')
+echo "  matched by marker: $MARKER_COUNT"
+
+# Fallback: match by title
+if [ -s "$TITLES_TMP" ]; then
+    mai -C "$REPO_PATH" --json ls --status=all | jq -r '.[] | "\(.id)\t\(.title // .id)"' 2>/dev/null | while IFS=$'\t' read -r mai_id mai_title; do
+        grep -q "^${mai_id}=" "$MAP_FILE" 2>/dev/null && continue
+        MATCH_NUM=$(grep -F "	${mai_title}" "$TITLES_TMP" 2>/dev/null | head -1 | cut -f1) || true
+        if [ -n "$MATCH_NUM" ]; then
+            echo "${mai_id}=${MATCH_NUM}" >> "$MAP_FILE"
+        fi
+    done
+fi
+rm -f "$TITLES_TMP"
+
+TOTAL=$(wc -l < "$MAP_FILE" | tr -d ' ')
+TITLE_COUNT=$((TOTAL - MARKER_COUNT))
+echo "  matched by title: $TITLE_COUNT"
+echo "Total: $TOTAL mapped to $MAP_FILE"

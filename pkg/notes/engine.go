@@ -148,7 +148,7 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	e.updateCache(ref)
 
 	// Auto-push to remote
-	e.autoPush(ref)
+	e.autoPush(ref, note.ID)
 
 	return note, nil
 }
@@ -243,7 +243,7 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	e.updateCache(ref)
 
 	// Auto-push to remote
-	e.autoPush(ref)
+	e.autoPush(ref, fullID)
 
 	return note, nil
 }
@@ -543,7 +543,7 @@ func (e *RealEngine) Sync() error {
 // autoPush pushes the notes ref to the configured remote if set.
 // On rejection, fetches + merges (cat_sort_uniq) + retries once.
 // Failures warn to stderr but never block the write.
-func (e *RealEngine) autoPush(ref git.NotesRef) {
+func (e *RealEngine) autoPush(ref git.NotesRef, noteID string) {
 	if e.config.Remote == "" {
 		return
 	}
@@ -596,13 +596,13 @@ func (e *RealEngine) autoPush(ref git.NotesRef) {
 	}
 
 	// Fire post-push hook
-	e.runPostPushHook(remote, refPattern)
+	e.runPostPushHook(remote, refPattern, noteID)
 }
 
 // runPostPushHook fires .maitake/hooks/post-push after a successful push.
 // The hook receives the remote name and ref as env vars.
 // Failures warn to stderr — they never block the push.
-func (e *RealEngine) runPostPushHook(remote, ref string) {
+func (e *RealEngine) runPostPushHook(remote, ref string, noteID string) {
 	if !guard.HookExists(e.maitakeDir, "post-push") {
 		return
 	}
@@ -610,6 +610,7 @@ func (e *RealEngine) runPostPushHook(remote, ref string) {
 		"MAI_REMOTE":    remote,
 		"MAI_REF":       ref,
 		"MAI_REPO_PATH": e.repoPath,
+		"MAI_NOTE_ID":   noteID,
 	}
 	if err := guard.RunHook(e.maitakeDir, "post-push", nil, env); err != nil {
 		fmt.Fprintf(os.Stderr, "mai: warning: post-push hook: %v\n", err)
