@@ -47,8 +47,8 @@ func TestConfig_ReadMissing(t *testing.T) {
 	if cfg.Docs.Dir != "docs" {
 		t.Errorf("Docs.Dir = %q, want docs (default)", cfg.Docs.Dir)
 	}
-	if cfg.Docs.Sync != "manual" {
-		t.Errorf("Docs.Sync = %q, want manual (default)", cfg.Docs.Sync)
+	if cfg.Docs.Sync != "auto" {
+		t.Errorf("Docs.Sync = %q, want auto (default)", cfg.Docs.Sync)
 	}
 }
 

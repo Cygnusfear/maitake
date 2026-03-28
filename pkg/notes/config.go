@@ -87,8 +87,9 @@ func WriteConfig(maitakeDir string, cfg Config) error {
 func defaultConfig() Config {
 	return Config{
 		Docs: DocsConfig{
-			Sync: "manual",
-			Dir:  "docs",
+			Sync:  "auto",
+			Dir:   "docs",
+			Watch: true,
 		},
 		Hooks: HooksConfig{
 			PreWrite: true,

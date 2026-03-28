@@ -1,0 +1,37 @@
+# Maitake configuration
+#
+# Per-repo:  .maitake/config.toml
+# Global:    ~/.maitake/config.toml
+#
+# Per-repo overrides global. Everything has sensible defaults —
+# you only need to set what you want to change.
+
+[sync]
+  # Remote to auto-push notes to after every write.
+  # Empty = local only, no push.
+  remote = "origin"
+
+  # Hosts that must never receive notes. Checked before every push.
+  blocked-hosts = ["github.com"]
+
+[docs]
+  # Sync mode for doc notes ↔ markdown files.
+  #   "auto"   — materialize files on every note write (default)
+  #   "manual" — only sync on explicit `mai docs sync`
+  #   "off"    — no materialization
+  sync = "auto"
+
+  # Directory for materialized doc files (relative to repo root).
+  dir = "docs"
+
+  # Daemon watches this repo's docs dir for file changes.
+  # When true, Obsidian edits sync to notes in real-time.
+  # Daemon auto-starts on any `mai` command. Set false to disable.
+  watch = true
+
+[hooks]
+  # Run .maitake/hooks/pre-write (or ~/.maitake/hooks/pre-write) before writes.
+  pre-write = true
+
+  # Run .maitake/hooks/post-push after successful push.
+  post-push = true

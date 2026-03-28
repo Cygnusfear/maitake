@@ -617,3 +617,10 @@ During transition, `mai` checks both refs/notes and `.tickets/`. Unified view. G
 
 EDITED CONTENT
 REGRESSION CHECK
+
+OBSIDIAN EDIT 1774732766
+
+DAEMON TEST 1774732869
+
+LIVE EDIT 1774732917
+

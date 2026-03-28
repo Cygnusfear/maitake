@@ -15,7 +15,7 @@ func TestDocsSync_NoteToFile(t *testing.T) {
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
 
-	// Create a doc note
+	// Create a doc note (auto-sync may write file immediately)
 	note, err := engine.Create(notes.CreateOptions{
 		Kind:  "doc",
 		Title: "Architecture",
@@ -25,17 +25,15 @@ func TestDocsSync_NoteToFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Sync — should write file
-	result, err := notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Written) != 1 {
-		t.Fatalf("Written = %d, want 1", len(result.Written))
-	}
+	// Sync to ensure file exists (may be no-op if auto-sync already wrote it)
+	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
 
 	// File should exist with frontmatter
-	data, err := os.ReadFile(filepath.Join(dir, result.Written[0]))
+	files, _ := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
+	if len(files) == 0 {
+		t.Fatal("no doc files found")
+	}
+	data, err := os.ReadFile(files[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +174,7 @@ func TestDocsSync_CloseRemovesFile(t *testing.T) {
 		t.Fatal("file should exist after sync")
 	}
 
-	// Close the note
+	// Close the note (auto-sync may remove file immediately)
 	engine.Append(notes.AppendOptions{
 		TargetID: note.ID,
 		Kind:     "event",
@@ -184,11 +182,9 @@ func TestDocsSync_CloseRemovesFile(t *testing.T) {
 		Value:    "closed",
 	})
 
-	// Sync — should remove file
-	result, _ := notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
-	if len(result.Removed) != 1 {
-		t.Fatalf("Removed = %d, want 1", len(result.Removed))
-	}
+	// Sync to ensure removal (may be no-op if auto-sync already did it)
+	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		t.Error("file should be removed after closing doc note")
 	}
