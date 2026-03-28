@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 #
 # post-push hook: sync maitake tickets to Forgejo Issues.
 # Fires after every successful auto-push of refs/notes/maitake.
@@ -9,24 +9,17 @@ set -euo pipefail
 #   MAI_REF        — ref that was pushed
 #   MAI_REPO_PATH  — absolute path to the repo
 #
-# Config (set in .maitake/config or environment):
-#   FORGEJO_URL    — base URL (e.g. https://git.example.com)
+# Required env:
 #   FORGEJO_TOKEN  — API token
+#
+# Optional env (auto-detected from remote URL if not set):
+#   FORGEJO_URL    — base URL (e.g. https://git.manad.app)
 #   FORGEJO_OWNER  — repo owner
 #   FORGEJO_REPO   — repo name
 #
-# Or auto-detect from git remote URL.
-#
-# Requirements:
-#   - `mai` on PATH
-#   - `jq` on PATH
-#   - `curl` on PATH
-#
 # Install:
-#   cp examples/hooks/post-push-forgejo .maitake/hooks/post-push
-#   chmod +x .maitake/hooks/post-push
-#   # Set FORGEJO_URL and FORGEJO_TOKEN in your environment or .maitake/config
-#
+#   cp examples/hooks/post-push-forgejo ~/.maitake/hooks/post-push
+#   chmod +x ~/.maitake/hooks/post-push
 
 REPO_PATH="${MAI_REPO_PATH:-.}"
 MAP_FILE="$REPO_PATH/.maitake/forgejo-issue-map"
@@ -34,27 +27,28 @@ MAP_FILE="$REPO_PATH/.maitake/forgejo-issue-map"
 mkdir -p "$(dirname "$MAP_FILE")"
 touch "$MAP_FILE"
 
-# Auto-detect from remote URL if not configured
-if [ -z "${FORGEJO_URL:-}" ]; then
-    REMOTE_URL=$(cd "$REPO_PATH" && git remote get-url "${MAI_REMOTE:-origin}" 2>/dev/null) || true
-    if [[ "$REMOTE_URL" =~ ^https?://([^/]+)/([^/]+)/([^/.]+) ]]; then
-        FORGEJO_URL="https://${BASH_REMATCH[1]}"
-        FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
-        FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
-    elif [[ "$REMOTE_URL" =~ ^git@([^:]+):([^/]+)/([^/.]+) ]]; then
-        FORGEJO_URL="https://${BASH_REMATCH[1]}"
-        FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
-        FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
-    fi
+# Auto-detect owner/repo from remote URL (always, even when FORGEJO_URL is overridden)
+REMOTE_URL=$(cd "$REPO_PATH" && git remote get-url "${MAI_REMOTE:-origin}" 2>/dev/null) || true
+if [[ "${REMOTE_URL:-}" =~ ^https?://([^/]+)/([^/]+)/([^/.]+) ]]; then
+    FORGEJO_URL="${FORGEJO_URL:-https://${BASH_REMATCH[1]}}"
+    FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
+    FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
+elif [[ "${REMOTE_URL:-}" =~ ^git@([^:]+):([^/]+)/([^/.]+) ]]; then
+    SSH_HOST="${BASH_REMATCH[1]}"
+    API_HOST="${SSH_HOST//-ssh/}"
+    FORGEJO_URL="${FORGEJO_URL:-https://${API_HOST}}"
+    FORGEJO_OWNER="${FORGEJO_OWNER:-${BASH_REMATCH[2]}}"
+    FORGEJO_REPO="${FORGEJO_REPO:-${BASH_REMATCH[3]}}"
 fi
 
 if [ -z "${FORGEJO_URL:-}" ] || [ -z "${FORGEJO_TOKEN:-}" ]; then
-    echo "post-push-forgejo: FORGEJO_URL or FORGEJO_TOKEN not set, skipping" >&2
+    exit 0  # silently skip — not configured
+fi
+if [ -z "${FORGEJO_OWNER:-}" ] || [ -z "${FORGEJO_REPO:-}" ]; then
     exit 0
 fi
 
 API="${FORGEJO_URL}/api/v1/repos/${FORGEJO_OWNER}/${FORGEJO_REPO}"
-AUTH="Authorization: token ${FORGEJO_TOKEN}"
 
 lookup_issue() {
     grep "^${1}=" "$MAP_FILE" 2>/dev/null | cut -d= -f2
@@ -66,47 +60,46 @@ save_mapping() {
     mv "${MAP_FILE}.tmp" "$MAP_FILE"
 }
 
-forgejo_api() {
-    local method="$1" endpoint="$2"
-    shift 2
-    curl -s -X "$method" "${API}${endpoint}" \
-        -H "$AUTH" \
-        -H "Content-Type: application/json" \
-        "$@"
-}
-
 # Sync all tickets
 mai -C "$REPO_PATH" --json ls --status=all | jq -c '.[]' | while read -r ticket; do
     ID=$(echo "$ticket" | jq -r '.id')
     TITLE=$(echo "$ticket" | jq -r '.title // .id')
     STATUS=$(echo "$ticket" | jq -r '.status')
 
-    BODY=$(mai -C "$REPO_PATH" --json show "$ID" | jq -r '.body // ""')
-    BODY="**mai:** \`${ID}\`\n\n${BODY}"
-
     STATE="open"
     [ "$STATUS" = "closed" ] && STATE="closed"
 
-    GH_NUMBER=$(lookup_issue "$ID")
+    ISSUE_NUMBER=$(lookup_issue "$ID")
 
-    if [ -n "$GH_NUMBER" ]; then
-        # Update
-        forgejo_api PATCH "/issues/${GH_NUMBER}" \
-            -d "$(jq -n --arg t "$TITLE" --arg b "$BODY" --arg s "$STATE" \
-                '{title: $t, body: $b, state: $s}')" > /dev/null
+    if [ -n "$ISSUE_NUMBER" ]; then
+        # Update existing issue
+        curl -s -X PATCH "${API}/issues/${ISSUE_NUMBER}" \
+            -H "Authorization: token ${FORGEJO_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg t "$TITLE" --arg s "$STATE" '{title: $t, state: $s}')" \
+            > /dev/null 2>&1 || true
     else
-        # Create
-        RESULT=$(forgejo_api POST "/issues" \
-            -d "$(jq -n --arg t "$TITLE" --arg b "$BODY" \
-                '{title: $t, body: $b}')")
+        # Create new issue
+        BODY=$(mai -C "$REPO_PATH" --json show "$ID" | jq -r '.body // ""')
+        FULL_BODY=$(printf '**mai:** `%s`\n\n%s' "$ID" "$BODY")
 
-        GH_NUMBER=$(echo "$RESULT" | jq -r '.number // empty')
-        if [ -n "$GH_NUMBER" ]; then
-            save_mapping "$ID" "$GH_NUMBER"
+        RESULT=$(curl -s -X POST "${API}/issues" \
+            -H "Authorization: token ${FORGEJO_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg t "$TITLE" --arg b "$FULL_BODY" '{title: $t, body: $b}')" \
+            2>&1) || true
 
-            [ "$STATE" = "closed" ] && \
-                forgejo_api PATCH "/issues/${GH_NUMBER}" \
-                    -d '{"state":"closed"}' > /dev/null
+        ISSUE_NUMBER=$(echo "$RESULT" | jq -r '.number // empty' 2>/dev/null) || true
+        if [ -n "$ISSUE_NUMBER" ]; then
+            save_mapping "$ID" "$ISSUE_NUMBER"
+
+            if [ "$STATE" = "closed" ]; then
+                curl -s -X PATCH "${API}/issues/${ISSUE_NUMBER}" \
+                    -H "Authorization: token ${FORGEJO_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d '{"state":"closed"}' \
+                    > /dev/null 2>&1 || true
+            fi
         fi
     fi
 done
