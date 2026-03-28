@@ -10,20 +10,26 @@ set -euo pipefail
 #
 # Or: mai init (creates this automatically)
 
+# Read stdin into a temp file (gitleaks needs a file, not pipe)
+TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
+cat > "$TMPFILE"
+
 # Gitleaks if available
 if command -v gitleaks &>/dev/null; then
-    gitleaks detect --pipe --no-banner 2>&1
+    gitleaks detect --no-git -s "$TMPFILE" --no-banner 2>&1
     exit $?
 fi
 
 # Fallback: catch the obvious stuff
-content=$(cat)
+content=$(cat "$TMPFILE")
 patterns=(
     'AKIA[0-9A-Z]{16}'                                           # AWS access key
     '-----BEGIN.*PRIVATE KEY-----'                                # Private keys
     'ghp_[A-Za-z0-9]{36}'                                        # GitHub PAT
     'gho_[A-Za-z0-9]{36}'                                        # GitHub OAuth
     'sk-[A-Za-z0-9]{48}'                                         # OpenAI API key
+    'xoxb-[0-9]+-[0-9]+-[A-Za-z0-9]+'                            # Slack bot token
     'eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*'     # JWT
 )
 
