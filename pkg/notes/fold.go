@@ -113,6 +113,8 @@ func applyFieldChange(state *State, field, value string) {
 		state.Type = value
 	case "title":
 		state.Title = value
+	case "body":
+		state.Body = value
 	case "tags":
 		applyTagChange(state, value)
 	case "deps":

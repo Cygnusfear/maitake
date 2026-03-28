@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Remote       string   // remote to auto-push to (empty = no push)
 	BlockedHosts []string // hosts that must never receive notes
+	DocsDir      string   // docs materialization directory (default: "docs")
 }
 
 // ReadConfig reads .maitake/config. Returns zero config if file doesn't exist.
@@ -34,6 +35,8 @@ func ReadConfig(maitakeDir string) Config {
 			cfg.Remote = val
 		case "blocked-host":
 			cfg.BlockedHosts = append(cfg.BlockedHosts, val)
+		case "docs-dir":
+			cfg.DocsDir = val
 		}
 	}
 	return cfg
@@ -51,6 +54,9 @@ func WriteConfig(maitakeDir string, cfg Config) error {
 	}
 	for _, host := range cfg.BlockedHosts {
 		lines = append(lines, "blocked-host "+host)
+	}
+	if cfg.DocsDir != "" {
+		lines = append(lines, "docs-dir "+cfg.DocsDir)
 	}
 
 	return os.WriteFile(filepath.Join(maitakeDir, "config"), []byte(strings.Join(lines, "\n")+"\n"), 0644)

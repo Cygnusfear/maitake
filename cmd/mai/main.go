@@ -45,6 +45,12 @@ func main() {
 		withEngine(func(e notes.Engine) { runSync(e, args) })
 	case "migrate":
 		withEngine(func(e notes.Engine) { runMigrate(e, args) })
+	case "docs":
+		if len(args) > 0 && args[0] == "sync" {
+			withEngine(func(e notes.Engine) { runDocsSync(e, args[1:]) })
+		} else {
+			fatal("usage: mai docs sync [--dir PATH]")
+		}
 	case "check":
 		withEngine(func(e notes.Engine) { runCheck(e, args) })
 	case "refs":
@@ -178,6 +184,9 @@ Setup:
   init [--remote R] [--block H]  Create .maitake/ with hooks, config, gitignore
   sync                           Manual fetch + merge + push
   migrate [--dir PATH] [--dry-run]  Import tk .tickets/*.md into maitake
+
+Docs:
+  docs sync [--dir PATH]         Bidirectional sync: doc notes ↔ markdown files
 
 Knowledge graph:
   check                          Validate all [[refs]] in notes + // @mai: in code

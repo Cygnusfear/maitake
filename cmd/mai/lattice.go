@@ -8,6 +8,63 @@ import (
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
+func runDocsSync(e notes.Engine, args []string) {
+	cwd, _ := os.Getwd()
+	dir := globalDir
+	if dir == "" {
+		dir = cwd
+	}
+
+	cfg := notes.DocsConfig{}
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--dir" && i+1 < len(args) {
+			i++
+			cfg.Dir = args[i]
+		}
+	}
+
+	// Read docs dir from .maitake/config if not specified
+	if cfg.Dir == "" {
+		maiCfg := e.GetConfig()
+		if maiCfg.DocsDir != "" {
+			cfg.Dir = maiCfg.DocsDir
+		}
+	}
+
+	result, err := notes.SyncDocs(e, dir, cfg)
+	if err != nil {
+		fatal("docs sync: %v", err)
+	}
+
+	if globalJSON {
+		printJSON(result)
+		return
+	}
+
+	total := len(result.Written) + len(result.Imported) + len(result.Updated) + len(result.Removed)
+	if total == 0 {
+		fmt.Println("Everything in sync.")
+		return
+	}
+
+	for _, f := range result.Written {
+		fmt.Printf("  → %s (written from note)\n", f)
+	}
+	for _, f := range result.Imported {
+		fmt.Printf("  ← %s (imported as note)\n", f)
+	}
+	for _, f := range result.Updated {
+		fmt.Printf("  ↔ %s (note updated from file)\n", f)
+	}
+	for _, f := range result.Removed {
+		fmt.Printf("  ✗ %s (removed, note closed)\n", f)
+	}
+
+	fmt.Printf("\n%d written, %d imported, %d updated, %d removed\n",
+		len(result.Written), len(result.Imported), len(result.Updated), len(result.Removed))
+}
+
 func runCheck(e notes.Engine, args []string) {
 	cwd, _ := os.Getwd()
 	dir := globalDir
