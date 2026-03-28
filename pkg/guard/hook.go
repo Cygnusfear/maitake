@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -30,8 +31,9 @@ func RunHook(maitakeDir, hookName string, content []byte, env map[string]string)
 	cmd := exec.CommandContext(ctx, hookPath)
 	cmd.Stdin = bytes.NewReader(content)
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var combined bytes.Buffer
+	cmd.Stdout = &combined
+	cmd.Stderr = &combined
 
 	// Build environment: inherit current env + add custom vars
 	cmd.Env = os.Environ()
@@ -40,9 +42,9 @@ func RunHook(maitakeDir, hookName string, content []byte, env map[string]string)
 	}
 
 	if err := cmd.Run(); err != nil {
-		stderrStr := stderr.String()
-		if stderrStr != "" {
-			return fmt.Errorf("hook %s rejected: %s", hookName, stderrStr)
+		output := strings.TrimSpace(combined.String())
+		if output != "" {
+			return fmt.Errorf("hook %s rejected:\n%s", hookName, output)
 		}
 		return fmt.Errorf("hook %s rejected (exit %s)", hookName, err)
 	}
@@ -97,27 +99,39 @@ func DefaultPreWriteHook() []byte {
 	return []byte(`#!/usr/bin/env bash
 set -euo pipefail
 
+# Read stdin into a temp file (gitleaks needs a file, not pipe)
+TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
+cat > "$TMPFILE"
+
 # Gitleaks if available
 if command -v gitleaks &>/dev/null; then
-    gitleaks detect --pipe --no-banner 2>&1
-    exit $?
+    gitleaks detect --no-git -s "$TMPFILE" --no-banner -v
+    CODE=$?
+    if [ $CODE -ne 0 ]; then
+        echo ""
+        echo "maitake: remove the secret and try again."
+        exit 1
+    fi
+    exit 0
 fi
 
 # Fallback: catch the obvious stuff
-content=$(cat)
+content=$(cat "$TMPFILE")
 patterns=(
     'AKIA[0-9A-Z]{16}'
     '-----BEGIN.*PRIVATE KEY-----'
     'ghp_[A-Za-z0-9]{36}'
     'gho_[A-Za-z0-9]{36}'
     'sk-[A-Za-z0-9]{48}'
+    'xoxb-[0-9]+-[0-9]+-[A-Za-z0-9]+'
     'eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*'
 )
 
 for pattern in "${patterns[@]}"; do
-    if echo "$content" | grep -qE "$pattern"; then
-        echo "maitake pre-write: possible secret detected (pattern: $pattern)" >&2
-        echo "Use --skip-hooks to bypass (not recommended)" >&2
+    if echo "$content" | grep -qE -- "$pattern"; then
+        echo "maitake pre-write: possible secret detected (pattern: $pattern)"
+        echo "Install gitleaks for better detection: https://github.com/gitleaks/gitleaks"
         exit 1
     fi
 done

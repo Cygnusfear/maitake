@@ -17,8 +17,14 @@ cat > "$TMPFILE"
 
 # Gitleaks if available
 if command -v gitleaks &>/dev/null; then
-    gitleaks detect --no-git -s "$TMPFILE" --no-banner 2>&1
-    exit $?
+    gitleaks detect --no-git -s "$TMPFILE" --no-banner -v
+    CODE=$?
+    if [ $CODE -ne 0 ]; then
+        echo ""
+        echo "maitake: remove the secret and try again."
+        exit 1
+    fi
+    exit 0
 fi
 
 # Fallback: catch the obvious stuff
