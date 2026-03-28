@@ -1,1 +1,3 @@
 {"id":"mai-01dl","kind":"ticket","type":"mai create --help creates a ticket instead of showing help","priority":2,"tags":["bug","cli"],"body":"Running 'mai create --help' creates a new ticket with title '--help' instead of printing usage info. Same for any subcommand.\n\nEvery positional arg is treated as a title. No help flag handling.\n\nNeed: --help / -h flag that prints usage for each subcommand.","timestamp":"2026-03-28T22:38:55Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-01dl"}}],"body":"fixed in dda4596 — CLI flag overhaul","timestamp":"2026-03-28T22:57:13Z","branch":"main"}
