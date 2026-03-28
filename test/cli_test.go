@@ -178,9 +178,19 @@ func TestCLI_FullLifecycle(t *testing.T) {
 	}
 }
 
-func TestCLI_ArtifactBornClosed(t *testing.T) {
+func TestCLI_ReviewBornOpen(t *testing.T) {
 	dir := setupTestRepo(t)
 	id := mai(t, dir, "review", "Code review findings", "-d", "Add mutex around token refresh")
+
+	out := mai(t, dir, "show", id)
+	if !strings.Contains(out, "[open]") {
+		t.Errorf("review should be born open:\n%s", out)
+	}
+}
+
+func TestCLI_ArtifactBornClosed(t *testing.T) {
+	dir := setupTestRepo(t)
+	id := mai(t, dir, "artifact", "Research findings", "-d", "Oracle output")
 
 	out := mai(t, dir, "show", id)
 	if !strings.Contains(out, "[closed]") {
@@ -197,8 +207,8 @@ func TestCLI_Context_FiltersOpenOnly(t *testing.T) {
 	id1 := mai(t, dir, "ticket", "Open ticket", "--target", "src/auth.ts")
 	// Warning on auth.ts (open)
 	id2 := mai(t, dir, "warn", "src/auth.ts", "Fragile code here")
-	// Closed review on auth.ts (artifact, born closed)
-	_ = mai(t, dir, "review", "Old review", "--target", "src/auth.ts")
+	// Closed artifact on auth.ts (born closed)
+	_ = mai(t, dir, "artifact", "Old review", "--target", "src/auth.ts")
 
 	out := mai(t, dir, "context", "src/auth.ts")
 
