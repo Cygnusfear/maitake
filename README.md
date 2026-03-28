@@ -2,7 +2,7 @@
   <img src="assets/logo.png" width="200" />
 </p>
 
-<h1 align="center">maitake 🍄</h1>
+<h1 align="center">maitake</h1>
 
 Git-native tickets, notes, and code review. One binary, zero dependencies beyond git. Storage lives in `refs/notes/maitake` — invisible to your working tree, pushed only where you choose.
 

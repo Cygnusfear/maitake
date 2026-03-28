@@ -96,7 +96,8 @@ func TestRunHook_EnvVars(t *testing.T) {
 func TestHookExists(t *testing.T) {
 	dir := t.TempDir()
 
-	if HookExists(dir, "pre-write") {
+	// Use a hook name that doesn't exist globally
+	if HookExists(dir, "test-nonexistent-hook") {
 		t.Fatal("should not exist yet")
 	}
 

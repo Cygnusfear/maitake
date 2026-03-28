@@ -147,8 +147,8 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	// Update cache with new ref tip
 	e.updateCache(ref)
 
-	// Auto-push to remote
-	e.autoPush(ref, note.ID)
+	// Auto-push to remote (async — don't block the caller)
+	go e.autoPush(ref, note.ID)
 
 	return note, nil
 }
@@ -242,8 +242,8 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	// Update cache with new ref tip
 	e.updateCache(ref)
 
-	// Auto-push to remote
-	e.autoPush(ref, fullID)
+	// Auto-push to remote (async — don't block the caller)
+	go e.autoPush(ref, fullID)
 
 	return note, nil
 }
