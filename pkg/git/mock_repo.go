@@ -607,6 +607,19 @@ func (r *mockRepoForTest) ListNotedRevisions(ref NotesRef) []OID {
 	return revisions
 }
 
+// ListAllNotedObjects returns ALL objects annotated by notes in the given ref.
+func (r *mockRepoForTest) ListAllNotedObjects(ref NotesRef) []OID {
+	var objects []OID
+	notesMap, ok := r.Notes[string(ref)]
+	if !ok {
+		return nil
+	}
+	for revision := range notesMap {
+		objects = append(objects, OID(revision))
+	}
+	return objects
+}
+
 // Remotes returns a list of the remotes.
 func (r *mockRepoForTest) Remotes() ([]string, error) {
 	return []string{"origin"}, nil

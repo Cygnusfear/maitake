@@ -307,8 +307,11 @@ type Repo interface {
 	// AppendNote appends a note to a revision under the given ref.
 	AppendNote(ref NotesRef, revision OID, note Note) error
 
-	// ListNotedRevisions returns the collection of revisions that are annotated by notes in the given ref.
+	// ListNotedRevisions returns the collection of commit revisions that are annotated by notes in the given ref.
 	ListNotedRevisions(ref NotesRef) []OID
+
+	// ListAllNotedObjects returns ALL objects (commits, blobs, trees) annotated by notes in the given ref.
+	ListAllNotedObjects(ref NotesRef) []OID
 
 	// Remotes returns a list of the remotes.
 	Remotes() ([]string, error)

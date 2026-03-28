@@ -957,6 +957,23 @@ func (repo *GitRepo) ListNotedRevisions(ref NotesRef) []OID {
 	return revisions
 }
 
+// ListAllNotedObjects returns ALL objects annotated by notes in the given ref (not just commits).
+func (repo *GitRepo) ListAllNotedObjects(ref NotesRef) []OID {
+	var objects []OID
+	notesListOut, err := repo.runGitCommand("notes", "--ref", string(ref), "list")
+	if err != nil {
+		return nil
+	}
+	notesList := strings.Split(notesListOut, "\n")
+	for _, notePair := range notesList {
+		noteParts := strings.SplitN(notePair, " ", 2)
+		if len(noteParts) == 2 {
+			objects = append(objects, OID(noteParts[1]))
+		}
+	}
+	return objects
+}
+
 // Remotes returns a list of the remotes.
 func (repo *GitRepo) Remotes() ([]string, error) {
 	remotes, err := repo.runGitCommand("remote")

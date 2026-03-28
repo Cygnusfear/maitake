@@ -340,7 +340,7 @@ func (e *RealEngine) BranchMerge(name string) error {
 	mainRef := git.DefaultNotesRef
 
 	// Read all notes from branch
-	entries := e.repo.ListNotedRevisions(branchRef)
+	entries := e.repo.ListAllNotedObjects(branchRef)
 	for _, oid := range entries {
 		noteBytes := e.repo.GetNotes(branchRef, oid)
 		if len(noteBytes) == 0 {
@@ -401,7 +401,7 @@ func (e *RealEngine) Rebuild() error {
 	// TODO: scan all maitake refs (slots, branches) when NoteRefs is added
 	refs := []git.NotesRef{e.activeRef()}
 	for _, ref := range refs {
-		entries := e.repo.ListNotedRevisions(ref)
+		entries := e.repo.ListAllNotedObjects(ref)
 		for _, oid := range entries {
 			noteData := e.repo.GetNotes(ref, oid)
 			if len(noteData) == 0 {
@@ -434,21 +434,24 @@ func (e *RealEngine) runPreWriteHook(data []byte, note *Note) error {
 }
 
 // getOrCreateTarget determines the git OID to attach a note to.
-// For file targets, uses the blob OID. For standalone notes, creates a synthetic commit.
+// For file targets, uses the blob OID via Show + StoreBlob.
+// For standalone notes, creates a deterministic synthetic blob.
 func (e *RealEngine) getOrCreateTarget(note *Note) (git.OID, error) {
 	// Check edges for a file target
 	for _, edge := range note.Edges {
 		if edge.Type == "targets" && edge.Target.Kind == "path" {
-			// Try to resolve the file to a blob OID
-			obj, err := e.repo.GetCommitHash("HEAD:" + edge.Target.Ref)
-			if err == nil && obj != "" {
-				return obj, nil
+			// Get file contents at HEAD, then hash to get OID
+			contents, err := e.repo.Show("HEAD", edge.Target.Ref)
+			if err == nil && contents != "" {
+				oid, err := e.repo.StoreBlob(contents)
+				if err == nil {
+					return oid, nil
+				}
 			}
 		}
 	}
 
-	// No file target — create a synthetic target using hash-object
-	// Use the note ID as the content to get a deterministic OID
+	// No file target — create a deterministic synthetic blob from the note ID
 	content := "maitake:" + note.ID
 	oid, err := e.repo.StoreBlob(content)
 	if err != nil {
