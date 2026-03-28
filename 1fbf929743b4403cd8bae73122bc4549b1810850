@@ -1,1 +1,3 @@
 {"id":"mai-cokf","kind":"ticket","type":"task","title":"Auto-push notes ref to configured remote after every write","priority":1,"assignee":"Alexander Mangel","tags":["sync","forgejo"],"body":"After every Create/Append in the engine, push refs/notes/maitake to the configured remote. On push rejection, fetch + cat_sort_uniq merge + retry. Same safety model as tk: explicit remote config required, blocked-hosts list, push failures warn but don't block writes.","timestamp":"2026-03-28T15:12:46Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-cokf"}}],"timestamp":"2026-03-28T16:15:16Z","branch":"main"}
