@@ -1,106 +1,162 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 #
-# post-push hook: sync maitake tickets to GitHub Issues.
-# Fires after every successful auto-push of refs/notes/maitake.
+# post-push hook: bidirectional sync between maitake tickets and GitHub Issues.
 #
-# Env vars provided by mai:
-#   MAI_REMOTE     — remote name (e.g. "origin")
-#   MAI_REF        — ref that was pushed (e.g. "refs/notes/maitake")
-#   MAI_REPO_PATH  — absolute path to the repo
+# mai → GitHub: create/update issues, push comments
+# GitHub → mai: sync status changes, pull comments (on mai sync only)
 #
-# Requirements:
-#   - `gh` CLI authenticated (https://cli.github.com)
-#   - `mai` on PATH
-#   - `jq` on PATH
+# Env vars from mai:  MAI_REMOTE, MAI_REF, MAI_REPO_PATH, MAI_NOTE_ID
+# Requirements:       gh CLI authenticated, mai, jq
 #
 # Install:
-#   cp examples/hooks/post-push-github .maitake/hooks/post-push
-#   chmod +x .maitake/hooks/post-push
+#   cp examples/hooks/post-push-github ~/.maitake/hooks/post-push
+#   chmod +x ~/.maitake/hooks/post-push
 #
-# What it does:
-#   - Lists all open + in_progress tickets via `mai --json ls`
-#   - For each ticket, creates or updates a GitHub issue
-#   - Maps: title, body, status (open/closed), tags → labels, assignee
-#   - Tracks the GitHub issue number in a local mapping file
-#   - Closes GitHub issues when mai tickets close
-#
+# First-time setup (link existing issues):
+#   ./examples/hooks/github-build-map
 
 REPO_PATH="${MAI_REPO_PATH:-.}"
 MAP_FILE="$REPO_PATH/.maitake/github-issue-map"
+CURSOR_FILE="$REPO_PATH/.maitake/github-comment-cursor"
 
-# Ensure mapping file exists
-mkdir -p "$(dirname "$MAP_FILE")"
-touch "$MAP_FILE"
+mkdir -p "$REPO_PATH/.maitake"
+touch "$MAP_FILE" "$CURSOR_FILE"
 
-# Get the GitHub repo (owner/name) from the remote
+# ── Detect GitHub repo ────────────────────────────────────────────────────
+
 GITHUB_REPO=$(cd "$REPO_PATH" && gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null) || {
-    echo "post-push-github: could not detect GitHub repo (is gh authenticated?)" >&2
-    exit 0  # Don't block the push
+    exit 0  # gh not authed or not a GitHub repo — skip silently
 }
 
-lookup_issue() {
-    local mai_id="$1"
-    grep "^${mai_id}=" "$MAP_FILE" 2>/dev/null | cut -d= -f2
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+lookup()     { grep "^${1}=" "$2" 2>/dev/null | cut -d= -f2; }
+save_entry() {
+    local file="$3"
+    grep -v "^${1}=" "$file" > "${file}.tmp" 2>/dev/null || true
+    echo "${1}=${2}" >> "${file}.tmp"
+    mv "${file}.tmp" "$file"
 }
 
-save_mapping() {
-    local mai_id="$1" gh_number="$2"
-    # Remove old entry if exists
-    grep -v "^${mai_id}=" "$MAP_FILE" > "${MAP_FILE}.tmp" 2>/dev/null || true
-    echo "${mai_id}=${gh_number}" >> "${MAP_FILE}.tmp"
-    mv "${MAP_FILE}.tmp" "$MAP_FILE"
-}
+# ── GitHub → mai (pull changes, skip the ticket that just changed) ────────
 
-status_to_state() {
-    case "$1" in
-        closed) echo "closed" ;;
-        *)      echo "open" ;;
-    esac
-}
+SYNC_IDS=()
+if [ -z "${MAI_NOTE_ID:-}" ]; then
+    while IFS='=' read -r _id _num; do
+        [ -n "$_id" ] && SYNC_IDS+=("$_id")
+    done < "$MAP_FILE"
+fi
 
-# Sync all tickets (open, in_progress, and recently closed)
-mai -C "$REPO_PATH" --json ls --status=all | jq -c '.[]' | while read -r ticket; do
+for MAI_ID in "${SYNC_IDS[@]}"; do
+    ISSUE_NUM=$(lookup "$MAI_ID" "$MAP_FILE")
+    [ -z "$ISSUE_NUM" ] && continue
+
+    MAI_STATUS=$(mai -C "$REPO_PATH" --json show "$MAI_ID" 2>/dev/null | jq -r '.status // empty') || continue
+    [ -z "$MAI_STATUS" ] && continue
+
+    GH_STATE=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPO" --json state -q '.state' 2>/dev/null) || continue
+    GH_STATE_LOWER=$(echo "$GH_STATE" | tr '[:upper:]' '[:lower:]')
+
+    # Sync status
+    if [ "$GH_STATE_LOWER" = "closed" ] && [ "$MAI_STATUS" != "closed" ]; then
+        mai -C "$REPO_PATH" close "$MAI_ID" -m "Closed on GitHub (#${ISSUE_NUM})" 2>/dev/null || true
+    elif [ "$GH_STATE_LOWER" = "open" ] && [ "$MAI_STATUS" = "closed" ]; then
+        mai -C "$REPO_PATH" reopen "$MAI_ID" 2>/dev/null || true
+    fi
+
+    # Pull new GitHub comments → mai
+    LAST_SEEN=$(lookup "$MAI_ID" "$CURSOR_FILE")
+    COMMENTS=$(gh issue view "$ISSUE_NUM" --repo "$GITHUB_REPO" --json comments -q '.comments[] | "\(.databaseId)\t\(.author.login)\t\(.body)"' 2>/dev/null) || continue
+    LATEST_CID=""
+
+    echo "$COMMENTS" | while IFS=$'\t' read -r cid cuser cbody; do
+        [ -z "$cid" ] && continue
+        [ -n "$LAST_SEEN" ] && [ "$cid" -le "$LAST_SEEN" ] 2>/dev/null && continue
+        echo "$cbody" | grep -q '^\*\*mai:\*\*' 2>/dev/null && continue
+
+        mai -C "$REPO_PATH" add-note "$MAI_ID" "[github @${cuser}] ${cbody}" 2>/dev/null || true
+        echo "$cid"
+    done | tail -1 | read -r LATEST_CID || true
+
+    [ -n "$LATEST_CID" ] && save_entry "$MAI_ID" "$LATEST_CID" "$CURSOR_FILE"
+done
+
+# ── mai → GitHub (push local changes) ─────────────────────────────────────
+
+if [ -n "${MAI_NOTE_ID:-}" ]; then
+    PUSH_FILTER=".[] | select(.id == \"${MAI_NOTE_ID}\")"
+else
+    PUSH_FILTER=".[]"
+fi
+
+mai -C "$REPO_PATH" --json ls --status=all | jq -c "$PUSH_FILTER" | while read -r ticket; do
     ID=$(echo "$ticket" | jq -r '.id')
     TITLE=$(echo "$ticket" | jq -r '.title // .id')
     STATUS=$(echo "$ticket" | jq -r '.status')
     TAGS=$(echo "$ticket" | jq -r '(.tags // []) | join(",")')
 
-    # Get full body from show
-    BODY=$(mai -C "$REPO_PATH" --json show "$ID" | jq -r '.body // ""')
-    BODY="**mai:** \`${ID}\`\n\n${BODY}"
+    STATE="open"
+    [ "$STATUS" = "closed" ] && STATE="closed"
 
-    GH_STATE=$(status_to_state "$STATUS")
-    GH_NUMBER=$(lookup_issue "$ID")
+    ISSUE_NUM=$(lookup "$ID" "$MAP_FILE")
 
-    if [ -n "$GH_NUMBER" ]; then
+    if [ -n "$ISSUE_NUM" ]; then
         # Update existing issue
-        gh issue edit "$GH_NUMBER" \
-            --repo "$GITHUB_REPO" \
-            --title "$TITLE" \
-            --body "$(echo -e "$BODY")" \
-            2>/dev/null || true
+        gh issue edit "$ISSUE_NUM" --repo "$GITHUB_REPO" \
+            --title "$TITLE" 2>/dev/null || true
 
-        # Sync state
-        if [ "$GH_STATE" = "closed" ]; then
-            gh issue close "$GH_NUMBER" --repo "$GITHUB_REPO" 2>/dev/null || true
+        if [ "$STATE" = "closed" ]; then
+            gh issue close "$ISSUE_NUM" --repo "$GITHUB_REPO" 2>/dev/null || true
         else
-            gh issue reopen "$GH_NUMBER" --repo "$GITHUB_REPO" 2>/dev/null || true
+            gh issue reopen "$ISSUE_NUM" --repo "$GITHUB_REPO" 2>/dev/null || true
         fi
+
+        # Push new mai comments → GitHub
+        MAI_COMMENTS=$(mai -C "$REPO_PATH" --json show "$ID" 2>/dev/null | jq -c '.comments // []') || true
+        LAST_PUSHED=$(lookup "${ID}-pushed" "$CURSOR_FILE")
+        IDX=0
+        echo "$MAI_COMMENTS" | jq -c '.[]' 2>/dev/null | while read -r mc; do
+            IDX=$((IDX + 1))
+            [ -n "$LAST_PUSHED" ] && [ "$IDX" -le "$LAST_PUSHED" ] 2>/dev/null && continue
+            MC_BODY=$(echo "$mc" | jq -r '.body // ""')
+            echo "$MC_BODY" | grep -q '^\[github @' 2>/dev/null && continue
+            MC_BRANCH=$(echo "$mc" | jq -r '.branch // ""')
+            BTAG=""
+            [ -n "$MC_BRANCH" ] && BTAG=" (branch: \`${MC_BRANCH}\`)"
+            gh issue comment "$ISSUE_NUM" --repo "$GITHUB_REPO" \
+                --body "**mai:**${BTAG} ${MC_BODY}" 2>/dev/null || true
+        done
+        TOTAL=$(echo "$MAI_COMMENTS" | jq 'length' 2>/dev/null) || true
+        [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ] && save_entry "${ID}-pushed" "$TOTAL" "$CURSOR_FILE"
     else
         # Create new issue
-        GH_NUMBER=$(gh issue create \
-            --repo "$GITHUB_REPO" \
+        BODY=$(mai -C "$REPO_PATH" --json show "$ID" 2>/dev/null | jq -r '.body // ""')
+        FULL_BODY=$(printf '**mai:** `%s`\n\n%s' "$ID" "$BODY")
+
+        # Ensure labels exist before creating issue
+        if [ -n "$TAGS" ]; then
+            IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+            for tag in "${TAG_ARRAY[@]}"; do
+                tag=$(echo "$tag" | xargs)  # trim whitespace
+                [ -z "$tag" ] && continue
+                gh label create "$tag" --repo "$GITHUB_REPO" 2>/dev/null || true
+            done
+        fi
+
+        LABEL_ARGS=()
+        [ -n "$TAGS" ] && LABEL_ARGS=(--label "$TAGS")
+        NEW_URL=$(gh issue create --repo "$GITHUB_REPO" \
             --title "$TITLE" \
-            --body "$(echo -e "$BODY")" \
-            --label "$TAGS" \
-            2>/dev/null | grep -oE '[0-9]+$') || continue
+            --body "$FULL_BODY" \
+            "${LABEL_ARGS[@]}" 2>/dev/null) || true
 
-        save_mapping "$ID" "$GH_NUMBER"
-
-        # Close immediately if ticket is already closed
-        if [ "$GH_STATE" = "closed" ]; then
-            gh issue close "$GH_NUMBER" --repo "$GITHUB_REPO" 2>/dev/null || true
+        NEW_NUM=$(echo "$NEW_URL" | grep -oE '[0-9]+$') || true
+        if [ -n "$NEW_NUM" ]; then
+            save_entry "$ID" "$NEW_NUM" "$MAP_FILE"
+            if [ "$STATE" = "closed" ]; then
+                gh issue close "$NEW_NUM" --repo "$GITHUB_REPO" 2>/dev/null || true
+            fi
         fi
     fi
 done

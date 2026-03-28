@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -uo pipefail
+#
+# One-time: build the github-issue-map by scanning existing GitHub issues
+# and matching them to maitake tickets by **mai:**/**tk:** markers or by title.
+#
+# Run once after migrating from tk-sync:
+#   ./github-build-map
+#
+# Requires: gh CLI authenticated, mai, jq
+
+REPO_PATH="${MAI_REPO_PATH:-$(pwd)}"
+MAP_FILE="$REPO_PATH/.maitake/github-issue-map"
+
+mkdir -p "$REPO_PATH/.maitake"
+
+GITHUB_REPO=$(cd "$REPO_PATH" && gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null) || {
+    echo "Could not detect GitHub repo (is gh authenticated?)" >&2; exit 1
+}
+
+echo "Scanning ${GITHUB_REPO}..."
+
+> "$MAP_FILE"
+TITLES_TMP=$(mktemp)
+MARKER_COUNT=0
+
+# Fetch all issues
+gh issue list --repo "$GITHUB_REPO" --state all --limit 500 --json number,title,body 2>/dev/null | \
+    jq -r '.[] | "\(.number)\t\(.title)\t\(.body // "")"' | while IFS=$'\t' read -r num title body; do
+    MAI_ID=$(echo "$body" | grep -oE '\*\*(mai|tk):\*\* `([^`]+)`' | head -1 | grep -oE '`[^`]+`' | tr -d '`') || true
+    if [ -n "$MAI_ID" ]; then
+        echo "${MAI_ID}=${num}" >> "$MAP_FILE"
+    else
+        printf '%s\t%s\n' "$num" "$title" >> "$TITLES_TMP"
+    fi
+done
+
+MARKER_COUNT=$(wc -l < "$MAP_FILE" | tr -d ' ')
+echo "  matched by marker: $MARKER_COUNT"
+
+# Fallback: match by title
+if [ -s "$TITLES_TMP" ]; then
+    mai -C "$REPO_PATH" --json ls --status=all | jq -r '.[] | "\(.id)\t\(.title // .id)"' 2>/dev/null | while IFS=$'\t' read -r mai_id mai_title; do
+        grep -q "^${mai_id}=" "$MAP_FILE" 2>/dev/null && continue
+        MATCH_NUM=$(grep -F "	${mai_title}" "$TITLES_TMP" 2>/dev/null | head -1 | cut -f1) || true
+        [ -n "$MATCH_NUM" ] && echo "${mai_id}=${MATCH_NUM}" >> "$MAP_FILE"
+    done
+fi
+rm -f "$TITLES_TMP"
+
+TOTAL=$(wc -l < "$MAP_FILE" | tr -d ' ')
+TITLE_COUNT=$((TOTAL - MARKER_COUNT))
+echo "  matched by title: $TITLE_COUNT"
+echo "Total: $TOTAL mapped to $MAP_FILE"
