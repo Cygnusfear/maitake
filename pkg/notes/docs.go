@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -117,8 +118,15 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 		}
 	}
 
-	// 4. Disk → notes: import new files (no mai-id)
+	// 4. Disk → notes: import NEW files only (no mai-id, not tracked by git).
+	// Existing docs that predate maitake are left alone — import explicitly
+	// with: mai docs import
 	for _, df := range newFiles {
+		// Skip files already tracked by git (pre-maitake docs)
+		if isGitTracked(repoPath, df.Path) {
+			continue
+		}
+
 		title := titleFromPath(df.Path)
 		note, err := engine.Create(CreateOptions{
 			Kind:    "doc",
@@ -279,6 +287,12 @@ func RemoveTombstone(repoPath, noteID string) {
 		}
 	}
 	os.WriteFile(tsFile, []byte(strings.Join(lines, "\n")+"\n"), 0644)
+}
+
+// isGitTracked checks if a file is tracked by git (exists in the index).
+func isGitTracked(repoPath, relPath string) bool {
+	cmd := exec.Command("git", "-C", repoPath, "ls-files", "--error-unmatch", relPath)
+	return cmd.Run() == nil
 }
 
 func titleFromPath(path string) string {
