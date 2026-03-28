@@ -218,4 +218,3 @@ Notes refs don't push by default — git ignores them. Only the remote configure
 
 - [openprose/mycelium](https://github.com/openprose/mycelium) — git notes substrate
 - [google/git-appraise](https://github.com/google/git-appraise) — code review on git notes (Apache 2.0, repository package adapted)
-- [1st1/lat.md](https://github.com/1st1/lat.md) — knowledge graph north star
