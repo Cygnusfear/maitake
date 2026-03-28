@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package repository contains helper methods for working with a Git repo.
-package git
+package repository
 
 import (
 	"crypto/sha1"
