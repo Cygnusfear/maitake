@@ -1,8 +1,8 @@
-# Hongos — Design Specification
+# Maitake — Design Specification
 
 ## Overview
 
-Hongos is a git-native notes engine with ticket, review, and documentation semantics. One Go binary. Storage is `refs/notes/*`. No shadow branches, no working-tree files, no external services.
+Maitake is a git-native notes engine with ticket, review, and documentation semantics. One Go binary. Storage is `refs/notes/*`. No shadow branches, no working-tree files, no external services.
 
 Everything is a note. Every note has an ID. Every change is an event pointing at a note. Nothing is ever mutated or deleted.
 
@@ -15,7 +15,7 @@ Design references:
 
 ### 1.1 Everything is a note with an ID
 
-Every entity in hongos — ticket, warning, review finding, constraint, doc note, observation — is a **creation note** with a human-readable ID.
+Every entity in maitake — ticket, warning, review finding, constraint, doc note, observation — is a **creation note** with a human-readable ID.
 
 ```
 id wrn-a4f2
@@ -116,7 +116,7 @@ Same scheme as current tk:
 - Suffix = 4 random alphanumeric chars
 - Examples: `tre-5c4a`, `wrn-a4f2`, `rev-b3d1`
 
-IDs are stored in the creation note's `id` header. Partial matching works everywhere (e.g., `hongos show 5c4` matches `tre-5c4a`).
+IDs are stored in the creation note's `id` header. Partial matching works everywhere (e.g., `mai show 5c4` matches `tre-5c4a`).
 
 Kind-based prefixes are a convention, not enforced:
 - Tickets: directory prefix (`tre-`, `tic-`)
@@ -312,8 +312,8 @@ type StateSummary struct {
 Parallel write lanes for concurrent agents. Each slot is a separate notes ref.
 
 ```
-refs/notes/hongos              ← default slot
-refs/notes/hongos-slot-<name>  ← named slot
+refs/notes/maitake              ← default slot
+refs/notes/maitake-slot-<name>  ← named slot
 ```
 
 - `Create`/`Append` with `Slot` → writes to slot ref
@@ -324,13 +324,13 @@ refs/notes/hongos-slot-<name>  ← named slot
 ### 3.5 Branch-scoped notes
 
 ```
-refs/notes/hongos                     ← main scope
-refs/notes/hongos-branch-<name>       ← branch scope
+refs/notes/maitake                     ← main scope
+refs/notes/maitake-branch-<name>       ← branch scope
 ```
 
 - `BranchUse(name)` → all operations target the branch scope
 - `BranchMerge(name)` → copy notes from branch to main (set-union)
-- Scope persisted in `.hongos/scope` (gitignored)
+- Scope persisted in `.maitake/scope` (gitignored)
 
 ### 3.6 jj support
 
@@ -341,7 +341,7 @@ When `.jj/` is detected:
 
 ### 3.7 Index
 
-Local cache for fast queries. Stored in `.hongos/index` (gitignored).
+Local cache for fast queries. Stored in `.maitake/index` (gitignored).
 
 ```go
 type Index struct {
@@ -382,73 +382,73 @@ This keeps the notes ref as a flat list of git notes, each parseable independent
 
 ```bash
 # Create things
-hongos create "Fix auth race condition" -k ticket -t task -p 1 --tags auth
-hongos create "Race condition in refresh" -k warning --target src/auth.ts
-hongos create "Must be retryable" -k constraint --target src/auth.ts
+mai create "Fix auth race condition" -k ticket -t task -p 1 --tags auth
+mai create "Race condition in refresh" -k warning --target src/auth.ts
+mai create "Must be retryable" -k constraint --target src/auth.ts
 
 # Change things (by ID)
-hongos start tre-5c4a
-hongos close wrn-a4f2 -m "Fixed in abc123"
-hongos add-note tre-5c4a "Found root cause in refresh_token()"
-hongos tag tre-5c4a +critical
-hongos assign tre-5c4a "Alice"
-hongos dep tre-5c4a wrn-a4f2
-hongos link tre-5c4a rev-b3d1
+mai start tre-5c4a
+mai close wrn-a4f2 -m "Fixed in abc123"
+mai add-note tre-5c4a "Found root cause in refresh_token()"
+mai tag tre-5c4a +critical
+mai assign tre-5c4a "Alice"
+mai dep tre-5c4a wrn-a4f2
+mai link tre-5c4a rev-b3d1
 
 # Read things
-hongos show tre-5c4a              # full state: creation + events + comments
-hongos show wrn-a4f2              # same — warnings are just notes with IDs
-hongos context src/auth.ts        # all open notes targeting this file
-hongos context src/auth.ts --all  # open + closed
+mai show tre-5c4a              # full state: creation + events + comments
+mai show wrn-a4f2              # same — warnings are just notes with IDs
+mai context src/auth.ts        # all open notes targeting this file
+mai context src/auth.ts --all  # open + closed
 
 # Query things
-hongos ls                          # all open notes
-hongos ls --status=open            # explicit
-hongos ls -k ticket                # only tickets
-hongos ls -k warning               # only warnings
-hongos ls -k review                # only review findings
-hongos ls -T auth                  # by tag
-hongos ls --target src/auth.ts     # everything on a file
-hongos ready                       # open notes with all deps resolved
-hongos blocked                     # open notes with unresolved deps
+mai ls                          # all open notes
+mai ls --status=open            # explicit
+mai ls -k ticket                # only tickets
+mai ls -k warning               # only warnings
+mai ls -k review                # only review findings
+mai ls -T auth                  # by tag
+mai ls --target src/auth.ts     # everything on a file
+mai ready                       # open notes with all deps resolved
+mai blocked                     # open notes with unresolved deps
 
 # Review workflow
-hongos create "Auth hardening review" -k review-request \
+mai create "Auth hardening review" -k review-request \
   --target src/auth.ts --target src/http.ts
-hongos create "Add mutex" -k review --target src/auth.ts \
+mai create "Add mutex" -k review --target src/auth.ts \
   --part-of rev-b3d1 -m "AC: concurrent refresh safe"
-hongos create "Add backoff" -k review --target src/http.ts \
+mai create "Add backoff" -k review --target src/http.ts \
   --part-of rev-b3d1 -m "AC: exponential with jitter"
-hongos close rev-f1a2 -m "Fixed"
-hongos verdict rev-b3d1 approve
+mai close rev-f1a2 -m "Fixed"
+mai verdict rev-b3d1 approve
 
 # Explore
-hongos context src/auth.ts        # what do I need to know about this file?
-hongos refs tre-5c4a              # what points at this ticket?
-hongos follow tre-5c4a            # ticket + resolve all edges
-hongos kinds                       # what kinds are in use?
-hongos doctor                      # graph health
+mai context src/auth.ts        # what do I need to know about this file?
+mai refs tre-5c4a              # what points at this ticket?
+mai follow tre-5c4a            # ticket + resolve all edges
+mai kinds                       # what kinds are in use?
+mai doctor                      # graph health
 
 # Branch scope
-hongos branch use my-feature       # notes scoped to this branch
-hongos branch merge my-feature     # merge into main scope
+mai branch use my-feature       # notes scoped to this branch
+mai branch merge my-feature     # merge into main scope
 
 # Sync
-hongos sync-init forgejo           # push/pull notes to this remote
-hongos sync                        # push + pull + merge
+mai sync-init forgejo           # push/pull notes to this remote
+mai sync                        # push + pull + merge
 ```
 
 ### 4.2 Key principle: uniform interface
 
-There is no separate `ticket` subcommand vs `note` subcommand vs `review` subcommand. Every note is created with `hongos create`, queried with `hongos ls`, shown with `hongos show`. The `kind` is what differentiates them.
+There is no separate `ticket` subcommand vs `note` subcommand vs `review` subcommand. Every note is created with `mai create`, queried with `mai ls`, shown with `mai show`. The `kind` is what differentiates them.
 
 ```bash
-hongos create "Fix bug" -k ticket -t task          # ticket
-hongos create "Footgun here" -k warning             # warning
-hongos create "Review auth" -k review-request       # PR
-hongos create "Add mutex" -k review                 # review finding
-hongos create "Use YAML" -k decision                # ADR
-hongos create "Module overview" -k summary           # doc
+mai create "Fix bug" -k ticket -t task          # ticket
+mai create "Footgun here" -k warning             # warning
+mai create "Review auth" -k review-request       # PR
+mai create "Add mutex" -k review                 # review finding
+mai create "Use YAML" -k decision                # ADR
+mai create "Module overview" -k summary           # doc
 ```
 
 Same command. Same flags. Same query surface. The kind is metadata, not a different subsystem.
@@ -459,16 +459,16 @@ Common operations get short aliases:
 
 ```bash
 # These are equivalent:
-hongos create "Fix bug" -k ticket -t task -p 1
-hongos ticket "Fix bug" -t task -p 1
+mai create "Fix bug" -k ticket -t task -p 1
+mai ticket "Fix bug" -t task -p 1
 
 # These are equivalent:
-hongos create "Footgun" -k warning --target src/auth.ts
-hongos warn src/auth.ts "Footgun"
+mai create "Footgun" -k warning --target src/auth.ts
+mai warn src/auth.ts "Footgun"
 
 # These are equivalent:
-hongos create "Add mutex" -k review --target src/auth.ts --part-of rev-b3d1
-hongos review src/auth.ts "Add mutex" --part-of rev-b3d1
+mai create "Add mutex" -k review --target src/auth.ts --part-of rev-b3d1
+mai review src/auth.ts "Add mutex" --part-of rev-b3d1
 ```
 
 The shortcuts are sugar over `create` with pre-filled kind and argument order. They use the same code path.
@@ -478,7 +478,7 @@ The shortcuts are sugar over `create` with pre-filled kind and argument order. T
 When an agent starts working on a file:
 
 ```bash
-$ hongos context src/auth.ts
+$ mai context src/auth.ts
 
 wrn-a4f2 [warning] (open)     Race condition in token refresh
 con-b1c3 [constraint] (open)  Must be retryable
@@ -493,7 +493,7 @@ Everything the agent needs. Warnings, constraints, review findings, related tick
 Default: human-readable table (like current `tk ls`).
 
 ```bash
-$ hongos ls -k ticket --status=open
+$ mai ls -k ticket --status=open
 tre-5c4a [P1][open]    Fix auth race condition        auth,backend
 tre-9b2f [P2][open]    Add retry logic                http,backend
 ```
@@ -501,7 +501,7 @@ tre-9b2f [P2][open]    Add retry logic                http,backend
 JSON for scripting:
 
 ```bash
-$ hongos ls -k ticket --status=open --json
+$ mai ls -k ticket --status=open --json
 [{"id":"tre-5c4a","kind":"ticket","status":"open","priority":1,...},...]
 ```
 
@@ -513,7 +513,7 @@ Reviews are notes. The workflow is:
 1. Author creates review-request targeting changed files
 2. Reviewer creates review findings ON the files, linked to the request
 3. Each finding has acceptance criteria and rejection criteria in the body
-4. Implementer runs `hongos context <file>` and sees findings in-place
+4. Implementer runs `mai context <file>` and sees findings in-place
 5. Implementer fixes, then closes findings with a reason
 6. Reviewer creates review-verdict (approve / changes-requested)
 ```
@@ -543,7 +543,7 @@ Two concurrent requests can both see an expired token.
 - Silencing the error instead of fixing the race
 ```
 
-This note lives on `src/auth.ts`. When the fix agent runs `hongos context src/auth.ts`, they see it. The AC tells them what "done" looks like. The rejection criteria tells them what NOT to do.
+This note lives on `src/auth.ts`. When the fix agent runs `mai context src/auth.ts`, they see it. The AC tells them what "done" looks like. The rejection criteria tells them what NOT to do.
 
 ### 5.2 Verdict
 
@@ -572,8 +572,8 @@ Two findings still open. See rev-f1a2 and rev-g2b3.
 Notes refs don't push/fetch by default. Explicit opt-in per remote:
 
 ```bash
-hongos sync-init forgejo    # adds refspecs for this remote only
-hongos sync-init --remove github  # removes refspecs
+mai sync-init forgejo    # adds refspecs for this remote only
+mai sync-init --remove github  # removes refspecs
 ```
 
 ### 6.2 Merge
@@ -587,7 +587,7 @@ Both sides added notes → keep both. Same note on both sides → deduplicate by
 See [HOOKS.md](HOOKS.md) for the full spec.
 
 ```
-.hongos/hooks/
+.maitake/hooks/
 ├── pre-write       ← scan content before it enters a ref
 ├── pre-push        ← last-chance scan before push
 ├── post-write      ← logging, notifications
@@ -599,7 +599,7 @@ See [HOOKS.md](HOOKS.md) for the full spec.
 ### 8.1 From tk (.tickets/ shadow branch)
 
 ```bash
-hongos migrate-legacy [--dry-run]
+mai migrate-legacy [--dry-run]
 ```
 
 - Reads `.tickets/*.md` files
@@ -611,4 +611,4 @@ hongos migrate-legacy [--dry-run]
 
 ### 8.2 Backward compatibility
 
-During transition, `hongos` checks both refs/notes and `.tickets/`. Unified view. Gradual migration.
+During transition, `mai` checks both refs/notes and `.tickets/`. Unified view. Gradual migration.

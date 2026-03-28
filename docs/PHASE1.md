@@ -13,7 +13,7 @@ Thin wrapper around git CLI plumbing. No domain concepts. No note format knowled
 ### Why shell out to git CLI (not libgit2)
 
 - libgit2/go-git add massive dependency surface
-- git CLI is always available where hongos runs
+- git CLI is always available where maitake runs
 - Notes plumbing commands are simple and fast
 - We need `git notes`, `git rev-parse`, `git log`, `git cat-file` — not a full object model
 - Easier to test (mock command output, not a C library)
@@ -39,7 +39,7 @@ const (
 // NotesRef is a fully qualified notes reference.
 type NotesRef string
 
-const DefaultNotesRef NotesRef = "refs/notes/hongos"
+const DefaultNotesRef NotesRef = "refs/notes/maitake"
 
 // Object is a resolved git object.
 type Object struct {
@@ -97,8 +97,8 @@ type Repo interface {
     // NoteList lists all notes in a ref.
     NoteList(ref NotesRef) ([]NoteEntry, error)
 
-    // NoteRefs lists all hongos-related notes refs.
-    // Matches: refs/notes/hongos, refs/notes/hongos-*
+    // NoteRefs lists all maitake-related notes refs.
+    // Matches: refs/notes/maitake, refs/notes/maitake-*
     NoteRefs() ([]NotesRef, error)
 
     // LogWithNotes returns recent commits that have notes.
@@ -377,7 +377,7 @@ type IndexStore interface {
     Save(idx *Index) error
 }
 
-// FileIndexStore stores the index in .hongos/index.json (gitignored).
+// FileIndexStore stores the index in .maitake/index.json (gitignored).
 type FileIndexStore struct { ... }
 ```
 
@@ -555,31 +555,31 @@ Composting a note:
 
 ### Slots implementation
 
-- Default ref: `refs/notes/hongos`
-- Slot ref: `refs/notes/hongos-<slot-name>`
+- Default ref: `refs/notes/maitake`
+- Slot ref: `refs/notes/maitake-<slot-name>`
 - `Write` with slot → writes to slot ref
 - `Read` without slot → reads default ref
-- `Context`, `Find`, `Kinds` → scan all `refs/notes/hongos*` refs
+- `Context`, `Find`, `Kinds` → scan all `refs/notes/maitake*` refs
 - Supersession is intra-slot: writing to slot A never touches slot B
 
 ### Branch scope implementation
 
-- Main scope: `refs/notes/hongos`
-- Branch scope: `refs/notes/hongos-branch-<name>`
-- `BranchUse` persists active scope in `.hongos/scope` (gitignored)
+- Main scope: `refs/notes/maitake`
+- Branch scope: `refs/notes/maitake-branch-<name>`
+- `BranchUse` persists active scope in `.maitake/scope` (gitignored)
 - All read/write operations use the active scope's ref
 - `BranchMerge` copies notes from branch ref to main ref, handles conflicts
 
 ### Index implementation
 
-Stored in `.hongos/index.json` (gitignored). Structure:
+Stored in `.maitake/index.json` (gitignored). Structure:
 
 ```json
 {
   "version": 1,
   "ref_oids": {
-    "refs/notes/hongos": "abc123...",
-    "refs/notes/hongos-agent-a": "def456..."
+    "refs/notes/maitake": "abc123...",
+    "refs/notes/maitake-agent-a": "def456..."
   },
   "notes": {
     "<note-oid>": {

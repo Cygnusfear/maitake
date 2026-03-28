@@ -1,26 +1,26 @@
-# Hongos — Hook System
+# Maitake — Hook System
 
 ## Overview
 
-Hongos uses executable hooks for extensible behavior at key lifecycle points. Same contract as git hooks: executable files in `.hongos/hooks/`, receive context on stdin, exit code controls behavior.
+Maitake uses executable hooks for extensible behavior at key lifecycle points. Same contract as git hooks: executable files in `.maitake/hooks/`, receive context on stdin, exit code controls behavior.
 
 ## Hook directory
 
 ```
-.hongos/hooks/
+.maitake/hooks/
 ├── pre-write        ← before a note enters the notes ref
 ├── pre-push         ← before notes ref is pushed to a remote
 ├── post-write       ← after a note is written (logging, notifications)
 └── post-compost     ← after a note is composted
 ```
 
-`.hongos/` is gitignored. Hooks are local to each machine. Teams share hooks via a `hooks/` directory in the repo root that `hongos init` copies from (same pattern as `.githooks/`).
+`.maitake/` is gitignored. Hooks are local to each machine. Teams share hooks via a `hooks/` directory in the repo root that `mai init` copies from (same pattern as `.githooks/`).
 
 ## Contract
 
 | Property | Value |
 |---|---|
-| Location | `.hongos/hooks/<name>` |
+| Location | `.maitake/hooks/<name>` |
 | Executable | any language — bash, python, go binary, whatever |
 | Stdin | note content (for `pre-write`) or context-specific data |
 | Stdout | ignored (use stderr for messages) |
@@ -29,7 +29,7 @@ Hongos uses executable hooks for extensible behavior at key lifecycle points. Sa
 | Exit non-zero | reject / abort |
 | Missing hook | treated as exit 0 (allow) |
 | Non-executable hook | skipped with warning |
-| Timeout | 10s default, configurable in `.hongos/config` |
+| Timeout | 10s default, configurable in `.maitake/config` |
 
 ## pre-write
 
@@ -44,14 +44,14 @@ Runs before every note write. Receives the full note content on stdin. If it exi
 **Environment variables:**
 
 ```
-HONGOS_TARGET_OID=<oid>        # git object the note will attach to
-HONGOS_TARGET_PATH=<path>      # file path (if target is a file, empty otherwise)
-HONGOS_NOTE_KIND=<kind>        # the note's kind header
-HONGOS_NOTE_SLOT=<slot>        # slot name (empty = default)
-HONGOS_NOTE_REF=<ref>          # notes ref being written to
+MAI_TARGET_OID=<oid>        # git object the note will attach to
+MAI_TARGET_PATH=<path>      # file path (if target is a file, empty otherwise)
+MAI_NOTE_KIND=<kind>        # the note's kind header
+MAI_NOTE_SLOT=<slot>        # slot name (empty = default)
+MAI_NOTE_REF=<ref>          # notes ref being written to
 ```
 
-**Default hook (shipped with `hongos init`):**
+**Default hook (shipped with `mai init`):**
 
 ```bash
 #!/usr/bin/env bash
@@ -76,7 +76,7 @@ patterns=(
 
 for pattern in "${patterns[@]}"; do
     if echo "$content" | grep -qE "$pattern"; then
-        echo "hongos pre-write: possible secret detected (pattern: $pattern)" >&2
+        echo "maitake pre-write: possible secret detected (pattern: $pattern)" >&2
         echo "Use --skip-hooks to bypass (not recommended)" >&2
         exit 1
     fi
@@ -92,9 +92,9 @@ Runs before notes refs are pushed to a remote. Receives the remote name and URL 
 **Environment variables:**
 
 ```
-HONGOS_REMOTE_NAME=<name>      # e.g., "origin", "forgejo"
-HONGOS_REMOTE_URL=<url>        # remote URL
-HONGOS_REFS=<refs>             # space-separated notes refs being pushed
+MAI_REMOTE_NAME=<name>      # e.g., "origin", "forgejo"
+MAI_REMOTE_URL=<url>        # remote URL
+MAI_REFS=<refs>             # space-separated notes refs being pushed
 ```
 
 ## post-write
@@ -111,8 +111,8 @@ Runs after a note is successfully written. Non-blocking — exit code is logged 
 Same as `pre-write` plus:
 
 ```
-HONGOS_NOTE_OID=<oid>          # the newly created note blob OID
-HONGOS_AUTHOR=<name>           # git user.name
+MAI_NOTE_OID=<oid>          # the newly created note blob OID
+MAI_AUTHOR=<name>           # git user.name
 ```
 
 ## post-compost
@@ -122,15 +122,15 @@ Runs after a note is composted. Non-blocking.
 **Environment variables:**
 
 ```
-HONGOS_COMPOSTED_OID=<oid>     # the composted note's OID
-HONGOS_TARGET_PATH=<path>      # file path (if applicable)
-HONGOS_NOTE_KIND=<kind>        # the composted note's kind
+MAI_COMPOSTED_OID=<oid>     # the composted note's OID
+MAI_TARGET_PATH=<path>      # file path (if applicable)
+MAI_NOTE_KIND=<kind>        # the composted note's kind
 ```
 
 ## Bypass
 
 ```bash
-hongos note src/auth.ts -k warning -m "..." --skip-hooks
+mai note src/auth.ts -k warning -m "..." --skip-hooks
 ```
 
 Skipping hooks is logged as a `kind observation` note on the repo root:
@@ -146,24 +146,24 @@ This means bypasses are auditable.
 
 ## Sharing hooks across a team
 
-Put hook scripts in a `hooks/` directory in the repo root (tracked in git). Run `hongos init` to copy them into `.hongos/hooks/`:
+Put hook scripts in a `hooks/` directory in the repo root (tracked in git). Run `mai init` to copy them into `.maitake/hooks/`:
 
 ```
 repo-root/
 ├── hooks/
 │   ├── pre-write      ← tracked, shared via git
 │   └── pre-push
-└── .hongos/
+└── .maitake/
     └── hooks/
         ├── pre-write  ← local copy, executable
         └── pre-push
 ```
 
-`hongos init` copies from `hooks/` → `.hongos/hooks/` and sets executable bits.
+`mai init` copies from `hooks/` → `.maitake/hooks/` and sets executable bits.
 
 ## Configuration
 
-`.hongos/config` (gitignored):
+`.maitake/config` (gitignored):
 
 ```
 [hooks]
@@ -181,10 +181,10 @@ package guard
 // RunHook executes a hook by name with content on stdin.
 // Returns nil if hook passes or doesn't exist.
 // Returns error with stderr message if hook rejects.
-func RunHook(hongosDir string, hookName string, content []byte, env map[string]string) error
+func RunHook(maitakeDir string, hookName string, content []byte, env map[string]string) error
 
 // HookExists checks if a hook is installed and executable.
-func HookExists(hongosDir string, hookName string) bool
+func HookExists(maitakeDir string, hookName string) bool
 ```
 
 That's the entire package.

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-## What is hongos
+## What is maitake
 
 Git-native notes engine + ticket system + code review. One Go binary. Built on `refs/notes/*` — no shadow branches, no worktrees, no external dependencies beyond git.
 

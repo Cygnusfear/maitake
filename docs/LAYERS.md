@@ -1,10 +1,10 @@
-# Hongos — Layer Architecture
+# Maitake — Layer Architecture
 
 ## The full picture
 
 ```
 ┌───────────────────────────────────────────────┐
-│  CLI (cmd/hongos)                              │
+│  CLI (cmd/mai)                              │
 │  thin: flags → package calls → output          │
 ├───────────────────────────────────────────────┤
 │                                                │
@@ -104,8 +104,8 @@ Review graphs built on notes.
 This replaces: GitHub PRs, Forgejo MRs, git-appraise.
 
 Agent workflow:
-1. Reviewer writes findings directly on files: `hongos review find src/auth.ts -m "Fix the race condition. AC: ..."`
-2. Implementer runs `hongos context src/auth.ts` and sees findings in-place
+1. Reviewer writes findings directly on files: `mai review find src/auth.ts -m "Fix the race condition. AC: ..."`
+2. Implementer runs `mai context src/auth.ts` and sees findings in-place
 3. After fixing, implementer composts the finding
 4. Reviewer issues verdict
 
@@ -142,9 +142,9 @@ Instrument how agents use the system.
 | **Composting behavior** | Do agents compost stale notes after touching files? |
 
 Implementation:
-- Every hongos command logs a structured event to a local eval log
-- `hongos eval report` aggregates and scores
-- `hongos eval compare <session-a> <session-b>` diffs agent behavior across sessions
+- Every mai command logs a structured event to a local eval log
+- `mai eval report` aggregates and scores
+- `mai eval compare <session-a> <session-b>` diffs agent behavior across sessions
 - Eval data stays local (not in notes refs) — it's about the agent, not the repo
 
 Eval log format:
@@ -166,14 +166,14 @@ Eval log format:
 
 ## What this replaces
 
-| Platform concept | GitHub/Forgejo | Hongos |
+| Platform concept | GitHub/Forgejo | Maitake |
 |---|---|---|
-| Issues | Web UI, API | `hongos create`, `hongos ls` |
+| Issues | Web UI, API | `mai create`, `mai ls` |
 | Labels | Web UI | `tags` in creation note |
 | Milestones | Web UI | `milestone` field events |
-| PRs | Web UI, branch-based | `hongos review request` |
-| PR comments | Web UI | `hongos review find` (on files) |
-| PR approval | Web UI | `hongos review verdict` |
+| PRs | Web UI, branch-based | `mai review request` |
+| PR comments | Web UI | `mai review find` (on files) |
+| PR approval | Web UI | `mai review verdict` |
 | Docs/wiki | Separate wiki or docs/ | `kind summary/context/decision` on code |
 | CI status | Webhooks | future: `kind ci-result` on commits |
 
