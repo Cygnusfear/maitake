@@ -44,7 +44,8 @@ Closed from `main` — the branch was merged. The event stream tells the story.
 | --------------------------- | ----------------------------- |
 | `mai ticket [title] [opts]` | Ticket (task by default)      |
 | `mai warn <path> [message]` | Warning on a file             |
-| `mai review [title] [opts]` | Review artifact (born closed) |
+| `mai review [title] [opts]` | Code review (open, needs response) |
+| `mai artifact [title] [opts]` | Record/output (born closed — ADRs, research, mid-mortems) |
 | `mai create [title] [opts]` | Any kind — use `-k`           |
 
 **Options:** `-k kind`, `-t type`, `-p priority`, `-a assignee`, `--tags a,b`, `--target path`, `-d description`
@@ -193,9 +194,11 @@ Closed from `main` tells you the feature branch was merged.
 
 The index caches in `~/.maitake/cache/`, keyed by the notes ref tip SHA. Cache invalidates automatically on every write. Cold start reads from git; warm start skips all git round-trips.
 
-## Artifact tickets
+## Artifacts
 
-`mai review` creates tickets with `type: artifact` — born closed. They don't appear in `mai ls` or `mai context` unless you query explicitly with `--status=all`. Use for review findings, research results, ADRs, and other records.
+`mai artifact` creates notes with `type: artifact` — born closed. They don't appear in `mai ls` or `mai context` unless you query with `--status=all`. Use for ADRs, research results, oracle findings, mid-mortems, and other records that aren't active work.
+
+Reviews (`mai review`) are open by default — they need a response.
 
 ## Migration from tk
 

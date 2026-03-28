@@ -99,7 +99,9 @@ func main() {
 	case "warn":
 		withEngine(func(e notes.Engine) { runWarn(e, args) })
 	case "review":
-		withEngine(func(e notes.Engine) { runShortcut(e, "review", "artifact", args) })
+		withEngine(func(e notes.Engine) { runShortcut(e, "review", "", args) })
+	case "artifact":
+		withEngine(func(e notes.Engine) { runShortcut(e, "artifact", "artifact", args) })
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -146,7 +148,8 @@ Create:
   create [title] [options]   Create a note with a generated ID
   ticket [title] [options]   Shortcut: create -k ticket -t task
   warn <path> [message]      Shortcut: create -k warning --target <path>
-  review [title] [options]   Shortcut: create -k review -t artifact
+  review [title] [options]   Shortcut: create -k review (open, needs response)
+  artifact [title] [options] Shortcut: create -k artifact -t artifact (born closed)
 
 Lifecycle:
   start <id>                 Status → in_progress
