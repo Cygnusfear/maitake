@@ -11,7 +11,7 @@ Maitake uses executable hooks for extensible behavior at key lifecycle points. S
 ├── pre-write        ← before a note enters the notes ref
 ├── pre-push         ← before notes ref is pushed to a remote
 ├── post-write       ← after a note is written (logging, notifications)
-└── post-compost     ← after a note is composted
+└── post-close       ← after a note is closed
 ```
 
 `.maitake/` is gitignored. Hooks are local to each machine. Teams share hooks via a `hooks/` directory in the repo root that `mai init` copies from (same pattern as `.githooks/`).
@@ -115,16 +115,16 @@ MAI_NOTE_OID=<oid>          # the newly created note blob OID
 MAI_AUTHOR=<name>           # git user.name
 ```
 
-## post-compost
+## post-close
 
-Runs after a note is composted. Non-blocking.
+Runs after a note is closed. Non-blocking.
 
 **Environment variables:**
 
 ```
-MAI_COMPOSTED_OID=<oid>     # the composted note's OID
+MAI_CLOSED_OID=<oid>        # the closed note's OID
 MAI_TARGET_PATH=<path>      # file path (if applicable)
-MAI_NOTE_KIND=<kind>        # the composted note's kind
+MAI_NOTE_KIND=<kind>        # the closed note's kind
 ```
 
 ## Bypass

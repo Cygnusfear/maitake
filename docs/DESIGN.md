@@ -134,7 +134,6 @@ priority <int>
 assignee <string>
 tags <comma-separated>
 edge <type> <target-kind>:<ref>
-supersedes <oid>
 <key> <value>
 
 <blank line>

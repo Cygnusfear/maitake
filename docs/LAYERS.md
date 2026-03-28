@@ -4,27 +4,27 @@
 
 ```
 ┌───────────────────────────────────────────────┐
-│  CLI (cmd/mai)                              │
-│  thin: flags → package calls → output          │
+│ CLI (cmd/mai) │
+│ thin: flags → package calls → output │
 ├───────────────────────────────────────────────┤
-│                                                │
-│  pkg/ticket    — issues, epics, work items     │
-│  pkg/review    — PRs, findings, verdicts       │
-│  pkg/doc       — documentation on code         │
-│  pkg/eval      — agent behavior measurement    │
-│                                                │
-│  ─── all build on ───                          │
-│                                                │
-│  pkg/notes     — the substrate                 │
-│  (format, edges, kinds, composting,            │
-│   slots, branch-scope, index, fold)            │
-│                                                │
-│  ─── which builds on ───                       │
-│                                                │
-│  pkg/guard     — PII/secret gate               │
-│  pkg/git       — git plumbing                  │
-│  pkg/sync      — remote merge                  │
-│                                                │
+│ │
+│ pkg/ticket — issues, epics, work items │
+│ pkg/review — PRs, findings, verdicts │
+│ pkg/doc — documentation on code │
+│ pkg/eval — agent behavior measurement │
+│ │
+│ ─── all build on ─── │
+│ │
+│ pkg/notes — the substrate │
+│ (format, edges, kinds, │
+│ slots, branch-scope, index, fold) │
+│ │
+│ ─── which builds on ─── │
+│ │
+│ pkg/guard — PII/secret gate │
+│ pkg/git — git plumbing │
+│ pkg/sync — remote merge │
+│ │
 └───────────────────────────────────────────────┘
 ```
 
@@ -63,7 +63,7 @@ The core abstraction. Everything above this speaks "notes."
 | Kind | open-vocabulary classification |
 | Slot | parallel write lane (separate ref) |
 | Branch scope | feature-scoped notes namespace |
-| Composting | stale note triage |
+| Event folding | stale note triage |
 | Index | cached fold state for fast queries |
 | Supersession | immutable chain of note versions |
 
@@ -97,16 +97,16 @@ Review graphs built on notes.
 | File finding | `kind review` on a file blob with `edge part-of` |
 | Acceptance criteria | in the body of a review finding |
 | Verdict | `kind review-verdict` (approve / changes-requested) |
-| Re-review | new review-request superseding the old one |
+| Re-review | new review-request closing the old one |
 | Inline comment | `kind review` with line range in body |
-| Resolution | compost the finding after fix |
+| Resolution | close the finding after fix |
 
 This replaces: GitHub PRs, Forgejo MRs, git-appraise.
 
 Agent workflow:
 1. Reviewer writes findings directly on files: `mai review find src/auth.ts -m "Fix the race condition. AC: ..."`
 2. Implementer runs `mai context src/auth.ts` and sees findings in-place
-3. After fixing, implementer composts the finding
+3. After fixing, implementer closes the finding
 4. Reviewer issues verdict
 
 ### pkg/doc — documentation on code
@@ -124,7 +124,7 @@ Documentation that lives with what it documents.
 
 This replaces: scattered README files, AGENTS.md files (partially), doc comments that go stale.
 
-Key advantage: composting auto-flags stale docs when the code changes. No more docs that silently rot.
+Key advantage: event folding auto-flags stale docs when the code changes. No more docs that silently rot.
 
 ### pkg/eval — agent behavior measurement
 
@@ -139,7 +139,7 @@ Instrument how agents use the system.
 | **Guard rejection rate** | How often do agents try to write PII/secrets? |
 | **Ticket hygiene** | Are tickets closed after work? Are comments meaningful? |
 | **Context utilization** | When `context` returns warnings/constraints, did the agent respect them? |
-| **Composting behavior** | Do agents compost stale notes after touching files? |
+| **Event folding behavior** | Do agents close resolved notes after fixing issues? |
 
 Implementation:
 - Every mai command logs a structured event to a local eval log
@@ -189,7 +189,7 @@ Eval log format:
 | Phase | Packages | What it unlocks |
 |---|---|---|
 | 1 | `pkg/git`, `pkg/guard`, `pkg/notes` (core: read, write, list, find, edges) | Basic note operations |
-| 2 | `pkg/notes` (composting, slots, branch-scope, index) | Production-grade substrate |
+| 2 | `pkg/notes` (slots, branch-scope, index) | Production-grade substrate |
 | 3 | `pkg/ticket` (create, events, fold, ls, show, ready, blocked) | Issue tracking |
 | 4 | `pkg/review` (request, findings, verdict) | Code review |
 | 5 | `pkg/eval` (logging, report, compare) | Agent measurement |

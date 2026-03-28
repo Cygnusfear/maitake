@@ -29,7 +29,7 @@ Two layers, one binary:
 ### Layer rules
 
 - `pkg/git` talks to git only. No domain concepts.
-- `pkg/notes` knows about note format, edges, kinds, composting, slots, branch-scope. Does NOT know about tickets or reviews.
+- `pkg/notes` knows about note format, edges, kinds, event folding, slots, branch-scope. Does NOT know about tickets or reviews.
 - `pkg/ticket` and `pkg/review` build on `pkg/notes`. They never touch git directly.
 - `pkg/guard` scans content before any write. Every write path goes through it.
 - `pkg/sync` handles remote push/pull and note merge.
@@ -44,7 +44,7 @@ Two layers, one binary:
 5. **No `interface{}` or `any` in public APIs.** Type everything.
 6. **Guard every write.** All content passes through `pkg/guard` before hitting git. PII/secrets rejected at write time.
 7. **Event-sourced tickets.** Tickets are immutable creation notes + event stream. No mutable blobs. No merge conflicts.
-8. **Notes are append-only.** Supersession via `supersedes` header, not mutation.
+8. **Notes are append-only.** Changes via events, not mutation.
 9. **Performance budget.** Listing/filtering 10,000 notes must complete in <200ms. Build caching/indexing from day 0.
 10. **jj support from day 0.** Detect `.jj/`, use change_id edges, handle rewritten commit OIDs.
 
