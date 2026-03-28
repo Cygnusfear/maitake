@@ -556,6 +556,8 @@ func (e *RealEngine) Sync() error {
 }
 
 // autoSyncDoc materializes a doc note to disk if docs.sync is "auto".
+// Only writes when the file doesn't exist or matches the previous note body.
+// Never overwrites a file that the user edited (file wins on conflict).
 func (e *RealEngine) autoSyncDoc(noteID string) {
 	if e.config.Docs.Sync != "auto" {
 		return
@@ -572,6 +574,15 @@ func (e *RealEngine) autoSyncDoc(noteID string) {
 	if state.Status == "closed" {
 		os.Remove(absPath)
 		return
+	}
+
+	// If file exists and has different content, don't overwrite — file wins.
+	// The next mai docs sync (or daemon) will reconcile.
+	if data, err := os.ReadFile(absPath); err == nil {
+		_, existingBody := parseMaiFrontmatter(string(data))
+		if contentHash(existingBody) != contentHash(state.Body) {
+			return // file diverged, don't clobber
+		}
 	}
 
 	writeDocFile(absPath, state.ID, state.Body)

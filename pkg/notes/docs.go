@@ -157,6 +157,11 @@ func docTargetPath(state *State, docsDir string) string {
 	return filepath.Join(docsDir, slug+".md")
 }
 
+// ParseMaiFrontmatterExported is the exported version for testing.
+func ParseMaiFrontmatterExported(content string) (string, string) {
+	return parseMaiFrontmatter(content)
+}
+
 // parseMaiFrontmatter extracts mai-id from YAML frontmatter.
 // Returns noteID (empty if none) and the body without frontmatter.
 func parseMaiFrontmatter(content string) (noteID, body string) {
