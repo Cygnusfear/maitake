@@ -47,10 +47,10 @@ func runDaemon(args []string) {
 	}
 	defer watcher.Close()
 
-	// Add all docs directories (and subdirectories)
+	// Watch repo roots (not docs dirs — those can be deleted and recreated)
 	for _, w := range watched {
-		addDirRecursive(watcher, w.docsDir)
-		fmt.Printf("watching %s (%s)\n", w.docsDir, filepath.Base(w.path))
+		addDirRecursive(watcher, w.path)
+		fmt.Printf("watching %s (%s)\n", w.path, filepath.Base(w.path))
 	}
 
 	fmt.Printf("\nmai daemon: watching %d repo(s). ctrl-c to stop.\n\n", len(watched))
@@ -66,20 +66,34 @@ func runDaemon(args []string) {
 			if !ok {
 				return
 			}
+
+			// Watch new directories (including recreated docs dirs)
+			if event.Op&fsnotify.Create != 0 {
+				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+					addDirRecursive(watcher, event.Name)
+				}
+			}
+
 			if !strings.HasSuffix(event.Name, ".md") {
 				continue
 			}
 			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 				continue
 			}
-			debounce[event.Name] = time.Now()
 
-			// Watch new directories
-			if event.Op&fsnotify.Create != 0 {
-				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					addDirRecursive(watcher, event.Name)
+			// Only process files under a watched repo's docs dir
+			inDocsDir := false
+			for _, w := range watched {
+				if strings.HasPrefix(event.Name, w.docsDir+"/") || event.Name == w.docsDir {
+					inDocsDir = true
+					break
 				}
 			}
+			if !inDocsDir {
+				continue
+			}
+
+			debounce[event.Name] = time.Now()
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -145,12 +159,19 @@ func syncFile(w watchedRepo, filePath string) {
 	}
 }
 
+var skipWatchDirs = map[string]bool{
+	".git": true, "node_modules": true, "vendor": true,
+	"target": true, "dist": true, "build": true,
+	".next": true, "__pycache__": true, ".worktrees": true,
+	".maitake": true,
+}
+
 func addDirRecursive(watcher *fsnotify.Watcher, dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || !info.IsDir() {
 			return nil
 		}
-		if info.Name() == ".git" || info.Name() == "node_modules" {
+		if skipWatchDirs[info.Name()] {
 			return filepath.SkipDir
 		}
 		watcher.Add(path)
