@@ -16,3 +16,4 @@ Thumbs.db
 
 # Test artifacts
 test/tmp/
+.tickets/
