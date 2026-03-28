@@ -158,43 +158,22 @@ func ensureDaemon() {
 	}
 	pidFile := filepath.Join(home, ".maitake", "daemon.pid")
 
-	// Check if already running
+	// Check if already running — fast PID check only
 	if data, err := os.ReadFile(pidFile); err == nil {
 		pid := strings.TrimSpace(string(data))
-		if pid != "" {
-			// Check if process is alive
-			proc := fmt.Sprintf("/proc/%s", pid)
-			if _, err := os.Stat(proc); err == nil {
-				return // Linux: running
-			}
-			// macOS: try kill -0
-			if checkPidAlive(pid) {
-				return
-			}
+		if pid != "" && checkPidAlive(pid) {
+			return // already running
 		}
 	}
 
-	// Check if any repo has watch enabled
-	repos := loadRepoList()
-	hasWatch := false
-	for _, r := range repos {
-		cfg := notes.ReadConfig(filepath.Join(r, ".maitake"))
-		if cfg.Docs.Watch {
-			hasWatch = true
-			break
-		}
-	}
-	if !hasWatch {
-		return
-	}
-
-	// Spawn daemon
+	// Spawn daemon — it decides what to watch on startup (not us)
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
 
 	logFile := filepath.Join(home, ".maitake", "daemon.log")
+	os.MkdirAll(filepath.Dir(logFile), 0755)
 	out, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -210,7 +189,6 @@ func ensureDaemon() {
 		return
 	}
 
-	// Write PID
 	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", proc.Pid)), 0644)
 	proc.Release()
 	out.Close()
@@ -231,6 +209,12 @@ func checkPidAlive(pid string) bool {
 }
 
 func registerRepo(repoPath string) {
+	// Don't register temp dirs (test repos, CI, etc.)
+	if strings.Contains(repoPath, "/tmp/") || strings.Contains(repoPath, "/private/tmp/") ||
+		strings.Contains(repoPath, os.TempDir()) {
+		return
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return

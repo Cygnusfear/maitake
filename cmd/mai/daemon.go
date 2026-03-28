@@ -15,21 +15,22 @@ import (
 func runDaemon(args []string) {
 	repos := loadRepoList()
 	if len(repos) == 0 {
-		fatal("no repos registered — run mai in a repo first")
+		os.Exit(0) // no repos, exit silently
 	}
 
-	// Filter to repos with docs.watch enabled
+	// Filter to repos that exist and have docs.watch enabled
 	var watched []watchedRepo
 	for _, repoPath := range repos {
+		// Skip dead/temp repos
+		if _, err := os.Stat(repoPath); err != nil {
+			continue
+		}
 		maitakeDir := filepath.Join(repoPath, ".maitake")
 		cfg := notes.ReadConfig(maitakeDir)
 		if !cfg.Docs.Watch {
 			continue
 		}
 		docsDir := filepath.Join(repoPath, cfg.Docs.Dir)
-		if _, err := os.Stat(docsDir); err != nil {
-			continue
-		}
 		watched = append(watched, watchedRepo{
 			path:    repoPath,
 			docsDir: docsDir,
@@ -38,7 +39,7 @@ func runDaemon(args []string) {
 	}
 
 	if len(watched) == 0 {
-		fatal("no repos have docs.watch = true")
+		os.Exit(0) // nothing to watch, exit silently
 	}
 
 	watcher, err := fsnotify.NewWatcher()
@@ -47,10 +48,15 @@ func runDaemon(args []string) {
 	}
 	defer watcher.Close()
 
-	// Watch repo roots (not docs dirs — those can be deleted and recreated)
+	// Watch repo root (shallow) + docs dir (recursive).
+	// Repo root is watched shallow so we catch docs/ being recreated after rm -rf.
+	// Docs dir is watched recursive for file changes.
 	for _, w := range watched {
-		addDirRecursive(watcher, w.path)
-		fmt.Printf("watching %s (%s)\n", w.path, filepath.Base(w.path))
+		watcher.Add(w.path) // repo root — shallow, catches dir creation
+		if _, err := os.Stat(w.docsDir); err == nil {
+			addDirRecursive(watcher, w.docsDir) // docs dir — recursive
+		}
+		fmt.Printf("watching %s (%s)\n", w.docsDir, filepath.Base(w.path))
 	}
 
 	fmt.Printf("\nmai daemon: watching %d repo(s). ctrl-c to stop.\n\n", len(watched))
@@ -67,10 +73,16 @@ func runDaemon(args []string) {
 				return
 			}
 
-			// Watch new directories (including recreated docs dirs)
+			// Watch new/recreated directories — especially the docs dir
 			if event.Op&fsnotify.Create != 0 {
 				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-					addDirRecursive(watcher, event.Name)
+					// Only recursively watch if it's under a docs dir
+					for _, w := range watched {
+						if strings.HasPrefix(event.Name, w.docsDir) || event.Name == w.docsDir {
+							addDirRecursive(watcher, event.Name)
+							break
+						}
+					}
 				}
 			}
 
