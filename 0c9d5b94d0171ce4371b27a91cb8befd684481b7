@@ -1,1 +1,3 @@
 {"id":"mai-g8mg","kind":"ticket","type":"task","title":"Test ticket for ramboard","priority":1,"tags":["test","ramboard"],"body":"# Test ticket for ramboard","timestamp":"2026-03-28T15:30:32Z"}
+
+{"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-g8mg"}}],"timestamp":"2026-03-28T15:30:40Z"}
