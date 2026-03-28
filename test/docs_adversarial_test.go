@@ -278,6 +278,70 @@ func TestDocs_ManyDocsAllSurviveRmRf(t *testing.T) {
 	}
 }
 
+// ── Intentional file deletion (tombstone) ────────────────────────────────
+
+func TestDocs_IntentionalDelete_NotResurrected(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	// Create 2 doc notes
+	engine.Create(notes.CreateOptions{Kind: "doc", Title: "Keep", Body: "Keeper."})
+	unwanted, _ := engine.Create(notes.CreateOptions{Kind: "doc", Title: "Unwanted", Body: "Delete me."})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	// Both files exist
+	keepFile := filepath.Join(dir, "docs", "keep.md")
+	unwantedFile := filepath.Join(dir, "docs", "unwanted.md")
+	if _, err := os.Stat(keepFile); err != nil {
+		t.Fatal("keep.md should exist")
+	}
+	if _, err := os.Stat(unwantedFile); err != nil {
+		t.Fatal("unwanted.md should exist")
+	}
+
+	// User deletes unwanted.md and adds tombstone
+	os.Remove(unwantedFile)
+	notes.AddTombstone(dir, unwanted.ID)
+
+	// Sync again — unwanted should NOT come back
+	repo2, _ := git.NewGitRepo(dir)
+	engine2, _ := notes.NewEngine(repo2)
+	notes.SyncDocs(engine2, dir, docsCfg)
+
+	if _, err := os.Stat(unwantedFile); !os.IsNotExist(err) {
+		t.Error("tombstoned file should NOT be recreated by sync")
+	}
+	if _, err := os.Stat(keepFile); err != nil {
+		t.Error("non-tombstoned file should still exist")
+	}
+}
+
+func TestDocs_TombstoneRemoval_Resurrects(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	note, _ := engine.Create(notes.CreateOptions{Kind: "doc", Title: "Revived", Body: "Back from the dead."})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	// Tombstone it
+	filePath := filepath.Join(dir, "docs", "revived.md")
+	os.Remove(filePath)
+	notes.AddTombstone(dir, note.ID)
+
+	// Verify tombstoned
+	notes.SyncDocs(engine, dir, docsCfg)
+	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+		t.Fatal("should be tombstoned")
+	}
+
+	// Remove tombstone
+	notes.RemoveTombstone(dir, note.ID)
+
+	// Sync — should come back
+	notes.SyncDocs(engine, dir, docsCfg)
+	if _, err := os.Stat(filePath); err != nil {
+		t.Error("removing tombstone should allow file to be recreated")
+	}
+}
+
 // ── Non-md files in docs dir ─────────────────────────────────────────────
 
 func TestDocs_IgnoresNonMarkdownFiles(t *testing.T) {

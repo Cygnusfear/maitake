@@ -77,19 +77,26 @@ func runDaemon(args []string) {
 			if !strings.HasSuffix(event.Name, ".md") {
 				continue
 			}
-			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
-				continue
-			}
 
 			// Only process files under a watched repo's docs dir
-			inDocsDir := false
-			for _, w := range watched {
-				if strings.HasPrefix(event.Name, w.docsDir+"/") || event.Name == w.docsDir {
-					inDocsDir = true
+			var matchedRepo *watchedRepo
+			for i := range watched {
+				if strings.HasPrefix(event.Name, watched[i].docsDir+"/") {
+					matchedRepo = &watched[i]
 					break
 				}
 			}
-			if !inDocsDir {
+			if matchedRepo == nil {
+				continue
+			}
+
+			if event.Op&fsnotify.Remove != 0 {
+				// File intentionally deleted — tombstone so sync doesn't recreate
+				handleFileDelete(*matchedRepo, event.Name)
+				continue
+			}
+
+			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 				continue
 			}
 
@@ -126,6 +133,43 @@ type watchedRepo struct {
 	docsDir string
 	cfg     notes.Config
 }
+
+func handleFileDelete(w watchedRepo, filePath string) {
+	// Read the file content from git to find the mai-id
+	// The file is already gone, but we can figure out which note it was
+	// by scanning the note index for docs targeting this path
+	rel, _ := filepath.Rel(w.path, filePath)
+
+	repo, err := git.NewGitRepo(w.path)
+	if err != nil {
+		return
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		return
+	}
+
+	// Find doc note that targets this file
+	states, _ := engine.Find(notes.FindOptions{Kind: "doc"})
+	for _, state := range states {
+		for _, target := range state.Targets {
+			if target == rel {
+				notes.AddTombstone(w.path, state.ID)
+				fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, state.ID, filepath.Base(w.path))
+				return
+			}
+		}
+		// Also check derived path
+		targetPath := notes.DocTargetPathExported(&state, w.cfg.Docs.Dir)
+		if targetPath == rel {
+			notes.AddTombstone(w.path, state.ID)
+			fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, state.ID, filepath.Base(w.path))
+			return
+		}
+	}
+}
+
+
 
 func syncFile(w watchedRepo, filePath string) {
 	repo, err := git.NewGitRepo(w.path)

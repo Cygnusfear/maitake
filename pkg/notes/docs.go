@@ -76,10 +76,16 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 		return nil
 	})
 
+	// Load tombstones
+	tombstones := loadTombstones(filepath.Join(repoPath, ".maitake"))
+
 	// 3. Notes → disk: write or update files
 	for id, state := range docNotes {
 		if closedIDs[id] {
 			continue // handle removals separately
+		}
+		if tombstones[id] {
+			continue // intentionally deleted by user
 		}
 
 		targetPath := docTargetPath(state, cfg.Dir)
@@ -162,6 +168,11 @@ func ParseMaiFrontmatterExported(content string) (string, string) {
 	return parseMaiFrontmatter(content)
 }
 
+// DocTargetPathExported is the exported version for daemon use.
+func DocTargetPathExported(state *State, docsDir string) string {
+	return docTargetPath(state, docsDir)
+}
+
 // parseMaiFrontmatter extracts mai-id from YAML frontmatter.
 // Returns noteID (empty if none) and the body without frontmatter.
 func parseMaiFrontmatter(content string) (noteID, body string) {
@@ -219,6 +230,55 @@ func slugify(s string) string {
 		s = strings.ReplaceAll(s, "--", "-")
 	}
 	return strings.Trim(s, "-")
+}
+
+// loadTombstones reads .maitake/tombstones — note IDs whose files were intentionally deleted.
+func loadTombstones(maitakeDir string) map[string]bool {
+	data, err := os.ReadFile(filepath.Join(maitakeDir, "tombstones"))
+	if err != nil {
+		return nil
+	}
+	ts := make(map[string]bool)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			ts[line] = true
+		}
+	}
+	return ts
+}
+
+// AddTombstone adds a note ID to the tombstone list.
+func AddTombstone(repoPath, noteID string) {
+	tsFile := filepath.Join(repoPath, ".maitake", "tombstones")
+	os.MkdirAll(filepath.Dir(tsFile), 0755)
+	data, _ := os.ReadFile(tsFile)
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == noteID {
+			return
+		}
+	}
+	f, _ := os.OpenFile(tsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if f != nil {
+		f.WriteString(noteID + "\n")
+		f.Close()
+	}
+}
+
+// RemoveTombstone removes a note from the tombstone list (e.g. when re-materializing).
+func RemoveTombstone(repoPath, noteID string) {
+	tsFile := filepath.Join(repoPath, ".maitake", "tombstones")
+	data, err := os.ReadFile(tsFile)
+	if err != nil {
+		return
+	}
+	var lines []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) != noteID && strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	os.WriteFile(tsFile, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
 func titleFromPath(path string) string {
