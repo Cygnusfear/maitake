@@ -20,6 +20,7 @@ func FoldEvents(creation *Note, events []*Note) *State {
 		Tags:      copyStrings(creation.Tags),
 		Body:      creation.Body,
 		Resolved:  creation.Resolved,
+		Branch:    creation.Branch,
 		CreatedAt: creation.Time,
 		UpdatedAt: creation.Time,
 		NoteOID:   creation.OID,
@@ -175,6 +176,7 @@ func ToSummary(s *State) StateSummary {
 		Tags:      s.Tags,
 		Targets:   s.Targets,
 		Resolved:  s.Resolved,
+		Branch:    s.Branch,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
 	}

@@ -42,6 +42,7 @@ type Note struct {
 	// Timestamps
 	Timestamp string `json:"timestamp,omitempty"` // creation/event time (unix or ISO)
 	Author    string `json:"author,omitempty"`
+	Branch    string `json:"branch,omitempty"` // git branch at write time (auto-stamped)
 
 	// Git metadata (populated on read, not stored in JSON)
 	OID       string `json:"-"`
@@ -97,6 +98,7 @@ type State struct {
 	Events    []Note    `json:"events,omitempty"`
 	Comments  []Note    `json:"comments,omitempty"`
 	Resolved  *bool     `json:"resolved,omitempty"`
+	Branch    string    `json:"branch,omitempty"` // branch at creation time
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	NoteOID   string    `json:"noteOid,omitempty"`
@@ -113,6 +115,7 @@ type StateSummary struct {
 	Tags      []string  `json:"tags,omitempty"`
 	Targets   []string  `json:"targets,omitempty"`
 	Resolved  *bool     `json:"resolved,omitempty"`
+	Branch    string    `json:"branch,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
@@ -91,6 +92,7 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		Edges:     opts.Edges,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Time:      time.Now().UTC(),
+		Branch:    e.currentGitBranch(),
 	}
 
 	// Auto-add target edges
@@ -172,6 +174,7 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		Resolved:  opts.Resolved,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Time:      time.Now().UTC(),
+		Branch:    e.currentGitBranch(),
 	}
 
 	// Auto-add edge based on kind
@@ -434,6 +437,17 @@ func (e *RealEngine) Rebuild() error {
 	idx.Build()
 	e.index = idx
 	return nil
+}
+
+// currentGitBranch returns the short branch name (e.g. "feature/auth").
+// Returns empty string on detached HEAD or error.
+func (e *RealEngine) currentGitBranch() string {
+	ref, err := e.repo.GetHeadRef()
+	if err != nil {
+		return ""
+	}
+	// GetHeadRef returns "refs/heads/feature/auth" — strip prefix
+	return strings.TrimPrefix(ref, "refs/heads/")
 }
 
 // GetConfig returns the current configuration.
