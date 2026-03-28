@@ -28,7 +28,7 @@ patterns=(
 )
 
 for pattern in "${patterns[@]}"; do
-    if echo "$content" | grep -qE "$pattern"; then
+    if echo "$content" | grep -qE -- "$pattern"; then
         echo "maitake pre-write: possible secret detected (pattern: $pattern)" >&2
         echo "Install gitleaks for better detection: https://github.com/gitleaks/gitleaks" >&2
         exit 1
