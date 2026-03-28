@@ -1,0 +1,462 @@
+package notes
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/cygnusfear/maitake/pkg/git"
+	"github.com/cygnusfear/maitake/pkg/guard"
+)
+
+// RealEngine implements Engine using a git repo, guard hooks, and an in-memory index.
+type RealEngine struct {
+	repo       git.Repo
+	repoPath   string // absolute path to repo root
+	maitakeDir string // .maitake directory path
+	scope      string // current branch scope (empty = main)
+	index      *Index
+}
+
+// NewEngine creates a new Engine backed by the given git repo.
+func NewEngine(repo git.Repo) (*RealEngine, error) {
+	repoPath := repo.GetPath()
+	maitakeDir := filepath.Join(repoPath, ".maitake")
+
+	e := &RealEngine{
+		repo:       repo,
+		repoPath:   repoPath,
+		maitakeDir: maitakeDir,
+		index:      NewIndex(),
+	}
+
+	// Load branch scope if persisted
+	scopeFile := filepath.Join(maitakeDir, "scope")
+	if data, err := os.ReadFile(scopeFile); err == nil {
+		e.scope = string(data)
+	}
+
+	// Build index from current notes
+	if err := e.Rebuild(); err != nil {
+		// Not fatal — index starts empty for new repos
+		_ = err
+	}
+
+	return e, nil
+}
+
+// activeRef returns the notes ref for the current scope.
+func (e *RealEngine) activeRef() git.NotesRef {
+	if e.scope != "" {
+		return git.BranchRef(e.scope)
+	}
+	return git.DefaultNotesRef
+}
+
+// slotRef returns the notes ref for a named slot, or the active ref if empty.
+func (e *RealEngine) slotRef(slot string) git.NotesRef {
+	if slot != "" {
+		return git.SlotRef(slot)
+	}
+	return e.activeRef()
+}
+
+// Create writes a new creation note with a generated ID.
+func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
+	if opts.Kind == "" {
+		return nil, fmt.Errorf("kind is required")
+	}
+
+	id, err := GenerateID(e.repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("generating ID: %w", err)
+	}
+
+	note := &Note{
+		ID:        id,
+		Kind:      opts.Kind,
+		Title:     opts.Title,
+		Type:      opts.Type,
+		Priority:  opts.Priority,
+		Assignee:  opts.Assignee,
+		Tags:      opts.Tags,
+		Body:      opts.Body,
+		Edges:     opts.Edges,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Time:      time.Now().UTC(),
+	}
+
+	// Auto-add target edges
+	for _, target := range opts.Targets {
+		note.Edges = append(note.Edges, Edge{
+			Type:   "targets",
+			Target: EdgeTarget{Kind: "path", Ref: target},
+		})
+	}
+
+	// Set default status based on type
+	if note.Status == "" {
+		if note.Type == "artifact" {
+			note.Status = "closed"
+		}
+	}
+
+	// Serialize and guard
+	data, err := Serialize(note)
+	if err != nil {
+		return nil, fmt.Errorf("serializing note: %w", err)
+	}
+
+	if err := e.runPreWriteHook(data, note); err != nil {
+		return nil, err
+	}
+
+	// Write to git
+	ref := e.slotRef(opts.Slot)
+	targetOID, err := e.getOrCreateTarget(note)
+	if err != nil {
+		return nil, fmt.Errorf("resolving target: %w", err)
+	}
+
+	if err := e.repo.AppendNote(ref, targetOID, git.Note(data)); err != nil {
+		return nil, fmt.Errorf("writing note: %w", err)
+	}
+
+	note.TargetOID = string(targetOID)
+	note.Ref = string(ref)
+	note.Slot = opts.Slot
+
+	// Update index
+	e.index.Ingest(note)
+	e.index.Build()
+
+	return note, nil
+}
+
+// Append writes an event or comment on an existing note.
+func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
+	if opts.TargetID == "" {
+		return nil, fmt.Errorf("target ID is required")
+	}
+	if opts.Kind == "" {
+		return nil, fmt.Errorf("kind is required")
+	}
+
+	// Resolve target note
+	fullID, err := e.index.ResolveID(opts.TargetID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving target ID: %w", err)
+	}
+	if fullID == "" {
+		return nil, fmt.Errorf("note %q not found", opts.TargetID)
+	}
+
+	note := &Note{
+		Kind:      opts.Kind,
+		Body:      opts.Body,
+		Field:     opts.Field,
+		Value:     opts.Value,
+		Edges:     opts.Edges,
+		Location:  opts.Location,
+		Parent:    opts.Parent,
+		Resolved:  opts.Resolved,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Time:      time.Now().UTC(),
+	}
+
+	// Auto-add edge based on kind
+	edgeType := "updates"
+	switch opts.Kind {
+	case "comment":
+		edgeType = "on"
+	case "event":
+		if opts.Field == "status" && opts.Value == "closed" {
+			edgeType = "closes"
+		} else if opts.Field == "status" && opts.Value == "in_progress" {
+			edgeType = "starts"
+		} else if opts.Field == "status" && opts.Value == "open" {
+			edgeType = "reopens"
+		}
+	}
+	note.Edges = append(note.Edges, Edge{
+		Type:   edgeType,
+		Target: EdgeTarget{Kind: "note", Ref: fullID},
+	})
+
+	// Serialize and guard
+	data, err := Serialize(note)
+	if err != nil {
+		return nil, fmt.Errorf("serializing note: %w", err)
+	}
+
+	if err := e.runPreWriteHook(data, note); err != nil {
+		return nil, err
+	}
+
+	// Write to git — append to same target as the creation note
+	ref := e.slotRef(opts.Slot)
+	creation := e.index.CreationNotes[fullID]
+	if creation == nil {
+		return nil, fmt.Errorf("creation note for %q not found in index", fullID)
+	}
+	targetOID := git.OID(creation.TargetOID)
+
+	if err := e.repo.AppendNote(ref, targetOID, git.Note(data)); err != nil {
+		return nil, fmt.Errorf("appending note: %w", err)
+	}
+
+	note.TargetOID = string(targetOID)
+	note.Ref = string(ref)
+	note.Slot = opts.Slot
+
+	// Update index
+	e.index.Ingest(note)
+	e.index.Build()
+
+	return note, nil
+}
+
+// Get returns the raw creation note by ID (not folded).
+func (e *RealEngine) Get(id string) (*Note, error) {
+	fullID, err := e.index.ResolveID(id)
+	if err != nil {
+		return nil, err
+	}
+	if fullID == "" {
+		return nil, fmt.Errorf("note %q not found", id)
+	}
+	note := e.index.CreationNotes[fullID]
+	if note == nil {
+		return nil, fmt.Errorf("note %q not found in index", fullID)
+	}
+	return note, nil
+}
+
+// Fold returns the computed current state of a note.
+func (e *RealEngine) Fold(id string) (*State, error) {
+	fullID, err := e.index.ResolveID(id)
+	if err != nil {
+		return nil, err
+	}
+	if fullID == "" {
+		return nil, fmt.Errorf("note %q not found", id)
+	}
+	state := e.index.States[fullID]
+	if state == nil {
+		return nil, fmt.Errorf("state for %q not found", fullID)
+	}
+	return state, nil
+}
+
+// Context returns all open notes targeting a file path.
+func (e *RealEngine) Context(path string) ([]State, error) {
+	states := e.index.ContextForPath(path)
+	result := make([]State, len(states))
+	for i, s := range states {
+		result[i] = *s
+	}
+	return result, nil
+}
+
+// ContextAll returns all notes targeting a file path (open + closed).
+func (e *RealEngine) ContextAll(path string) ([]State, error) {
+	states := e.index.ContextAllForPath(path)
+	result := make([]State, len(states))
+	for i, s := range states {
+		result[i] = *s
+	}
+	return result, nil
+}
+
+// Find returns all notes matching filters.
+func (e *RealEngine) Find(opts FindOptions) ([]State, error) {
+	states := e.index.Query(opts)
+	result := make([]State, len(states))
+	for i, s := range states {
+		result[i] = *s
+	}
+	return result, nil
+}
+
+// List returns summary state for notes matching filters.
+func (e *RealEngine) List(opts ListOptions) ([]StateSummary, error) {
+	return e.index.QueryList(opts), nil
+}
+
+// Refs returns all notes with edges pointing at a target (reverse lookup).
+func (e *RealEngine) Refs(target string) ([]State, error) {
+	// Search all states for edges targeting this
+	var results []State
+	for _, state := range e.index.States {
+		if matchesTarget(state, e.index.CreationNotes[state.ID], target) {
+			results = append(results, *state)
+		}
+	}
+	return results, nil
+}
+
+// matchesTarget checks if a state has any edge pointing at the given target.
+func matchesTarget(state *State, creation *Note, target string) bool {
+	if creation != nil {
+		for _, edge := range creation.Edges {
+			if edge.Target.Ref == target {
+				return true
+			}
+		}
+	}
+	for _, ev := range state.Events {
+		for _, edge := range ev.Edges {
+			if edge.Target.Ref == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Kinds returns all kinds in use with counts.
+func (e *RealEngine) Kinds() ([]KindCount, error) {
+	return e.index.KindCounts(), nil
+}
+
+// BranchUse switches the active notes scope.
+func (e *RealEngine) BranchUse(name string) error {
+	e.scope = name
+	// Persist
+	scopeFile := filepath.Join(e.maitakeDir, "scope")
+	if err := os.MkdirAll(e.maitakeDir, 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(scopeFile, []byte(name), 0644); err != nil {
+		return err
+	}
+	return e.Rebuild()
+}
+
+// BranchMerge merges a branch scope into the main scope.
+func (e *RealEngine) BranchMerge(name string) error {
+	branchRef := git.BranchRef(name)
+	mainRef := git.DefaultNotesRef
+
+	// Read all notes from branch
+	entries := e.repo.ListNotedRevisions(branchRef)
+	for _, oid := range entries {
+		noteBytes := e.repo.GetNotes(branchRef, oid)
+		if len(noteBytes) == 0 {
+			continue
+		}
+		// Append each note line to the main ref
+		for _, note := range noteBytes {
+			_ = e.repo.AppendNote(mainRef, oid, note)
+		}
+	}
+
+	return e.Rebuild()
+}
+
+// CurrentBranch returns the active scope name (empty = main).
+func (e *RealEngine) CurrentBranch() string {
+	return e.scope
+}
+
+// Doctor reports graph health.
+func (e *RealEngine) Doctor() (*DoctorReport, error) {
+	report := &DoctorReport{
+		ByKind:   make(map[string]int),
+		ByStatus: make(map[string]int),
+	}
+
+	for _, state := range e.index.States {
+		report.TotalNotes++
+		report.ByKind[state.Kind]++
+		report.ByStatus[state.Status]++
+		report.CreationNotes++
+		report.Events += len(state.Events)
+		report.Comments += len(state.Comments)
+	}
+
+	// Check for broken edges
+	for _, state := range e.index.States {
+		for _, dep := range state.Deps {
+			if e.index.CreationNotes[dep] == nil {
+				report.BrokenEdges++
+			}
+		}
+	}
+
+	// List slots
+	// TODO: scan for slot and branch refs when NoteRefs is added to git.Repo
+
+	report.IndexFresh = true
+	return report, nil
+}
+
+// Rebuild forces a full index rebuild from git.
+func (e *RealEngine) Rebuild() error {
+	idx := NewIndex()
+
+	// Scan all maitake refs
+	// For now, scan the active ref only
+	// TODO: scan all maitake refs (slots, branches) when NoteRefs is added
+	refs := []git.NotesRef{e.activeRef()}
+	for _, ref := range refs {
+		entries := e.repo.ListNotedRevisions(ref)
+		for _, oid := range entries {
+			noteData := e.repo.GetNotes(ref, oid)
+			if len(noteData) == 0 {
+				continue
+			}
+			for _, raw := range noteData {
+				note, err := Parse(raw)
+				if err != nil {
+					continue // skip unparseable notes
+				}
+				note.TargetOID = string(oid)
+				note.Ref = string(ref)
+				idx.Ingest(note)
+			}
+		}
+	}
+
+	idx.Build()
+	e.index = idx
+	return nil
+}
+
+// runPreWriteHook runs the pre-write guard hook.
+func (e *RealEngine) runPreWriteHook(data []byte, note *Note) error {
+	env := map[string]string{
+		"MAI_NOTE_KIND": note.Kind,
+		"MAI_NOTE_ID":   note.ID,
+	}
+	return guard.RunHook(e.maitakeDir, "pre-write", data, env)
+}
+
+// getOrCreateTarget determines the git OID to attach a note to.
+// For file targets, uses the blob OID. For standalone notes, creates a synthetic commit.
+func (e *RealEngine) getOrCreateTarget(note *Note) (git.OID, error) {
+	// Check edges for a file target
+	for _, edge := range note.Edges {
+		if edge.Type == "targets" && edge.Target.Kind == "path" {
+			// Try to resolve the file to a blob OID
+			obj, err := e.repo.GetCommitHash("HEAD:" + edge.Target.Ref)
+			if err == nil && obj != "" {
+				return obj, nil
+			}
+		}
+	}
+
+	// No file target — create a synthetic target using hash-object
+	// Use the note ID as the content to get a deterministic OID
+	content := "maitake:" + note.ID
+	oid, err := e.repo.StoreBlob(content)
+	if err != nil {
+		return "", fmt.Errorf("creating synthetic target: %w", err)
+	}
+	return oid, nil
+}
+
+// NoteRefs delegates to the git repo to list maitake notes refs.
+// This extends the git.Repo interface for maitake-specific ref filtering.
+
