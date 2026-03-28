@@ -1,145 +1,221 @@
 # maitake 🍄
 
-Git-native notes, tickets, and code review. One binary. Storage is `refs/notes/maitake` — invisible to your working tree, local-only by default.
-
-## Install
+Git-native tickets, notes, and code review. One binary, zero dependencies beyond git. Storage lives in `refs/notes/maitake` — invisible to your working tree, pushed only where you choose.
 
 ```bash
 go install github.com/cygnusfear/maitake/cmd/mai@latest
 ```
 
-## Quick start
+## 30-second tour
 
 ```bash
-# Create a ticket targeting a file
-mai ticket "Fix auth race condition" -p 1 --tags auth --target src/auth.ts
-
-# Start working on it
-mai start tre-5c4a
-
-# Add a comment about a specific file
-mai add-note tre-5c4a --file src/auth.ts "Add mutex around token refresh"
-
-# Add a line-level comment
-mai add-note tre-5c4a --file src/auth.ts --line 42 "Race condition here"
-
-# See everything about a file before touching it
-mai context src/auth.ts
-
-# Close when done
-mai close tre-5c4a -m "Fixed with mutex"
+mai init --remote origin --block github.com   # set up hooks + sync config
+mai ticket "Fix auth race" -p 1 --tags auth --target src/auth.ts
+mai start mt-5c4a
+mai add-note mt-5c4a --file src/auth.ts --line 42 "Race condition here"
+mai context src/auth.ts                       # see everything about a file
+mai close mt-5c4a -m "Fixed with mutex"
 ```
+
+Every write auto-pushes to the configured remote. Every note records the current git branch. Everything is JSON, append-only, and mergeable.
+
+## How it works
+
+Each ticket, warning, review finding, or comment is one JSON line in a git note. Nothing is mutated — state is computed by folding events:
+
+```
+{"id":"mt-5c4a","kind":"ticket","title":"Fix auth race","branch":"main","timestamp":"..."}
+{"kind":"event","field":"status","value":"in_progress","branch":"feature/auth","timestamp":"..."}
+{"kind":"comment","body":"Found root cause","branch":"feature/auth","timestamp":"..."}
+{"kind":"event","field":"status","value":"closed","branch":"main","timestamp":"..."}
+```
+
+Closed from `main` — the branch was merged. The event stream tells the story.
 
 ## Commands
 
 ### Create
 
-```bash
-mai create [title] [options]   # Create a note with a generated ID
-mai ticket [title] [options]   # Shortcut: -k ticket -t task
-mai warn <path> [message]      # Shortcut: -k warning --target <path>
-mai review [title] [options]   # Shortcut: -k review -t artifact (born closed)
-```
+| Command | What |
+|---|---|
+| `mai ticket [title] [opts]` | Ticket (task by default) |
+| `mai warn <path> [message]` | Warning on a file |
+| `mai review [title] [opts]` | Review artifact (born closed) |
+| `mai create [title] [opts]` | Any kind — use `-k` |
 
-Create options:
-
-```
--k, --kind KIND            Note kind (ticket, warning, review, constraint, etc.)
--t, --type TYPE            Type (task, bug, feature, epic, chore, artifact)
--p, --priority N           Priority 0-4 (0 = highest)
--a, --assignee NAME        Assignee
---tags TAG,TAG             Comma-separated tags
---target PATH              File this note is about (repeatable)
--d, --description TEXT     Body text
-```
+**Options:** `-k kind`, `-t type`, `-p priority`, `-a assignee`, `--tags a,b`, `--target path`, `-d description`
 
 ### Lifecycle
 
 ```bash
-mai start <id>                           # Status → in_progress
-mai close <id> [-m message]              # Status → closed
-mai reopen <id>                          # Status → open
-mai add-note <id> [text]                 # Append comment
-mai add-note <id> --file <path> [text]   # Comment about a specific file
-mai add-note <id> --file <path> --line N [text]  # Line-level comment
-mai tag <id> +tag / -tag                 # Add or remove tag
-mai assign <id> <name>                   # Set assignee
-mai dep <id> <dep-id>                    # Add dependency
-mai link <id> <id>                       # Symmetric link
+mai start <id>                                  # → in_progress
+mai close <id> [-m message]                     # → closed
+mai reopen <id>                                 # → open
+mai add-note <id> [text]                        # comment
+mai add-note <id> --file <path> [text]          # file-level comment
+mai add-note <id> --file <path> --line N [text] # line-level comment
+mai tag <id> +tag / -tag                        # add/remove tag
+mai assign <id> <name>                          # set assignee
+mai dep <id> <dep-id>                           # add dependency
+mai undep <id> <dep-id>                         # remove dependency
+mai link <id> <id>                              # symmetric link
+mai unlink <id> <id>                            # remove link
 ```
 
 ### Query
 
 ```bash
-mai show <id>                  # Full note state with comments
-mai ls [--status=X] [-k kind]  # List notes
-mai context <path>             # Everything about a file (open notes + file-located comments)
-mai ready                      # Open notes with deps resolved
-mai blocked                    # Open notes with unresolved deps
-mai kinds                      # List all kinds in use
-mai doctor                     # Graph health report
+mai show <id>                   # full state with comments
+mai ls                          # open + in_progress (work queue)
+mai ls --status=all             # everything
+mai ls -k warning               # filter by kind
+mai closed                      # recently closed
+mai context <path>              # everything targeting a file
+mai ready                       # unblocked work
+mai blocked                     # stuck on deps
+mai dep tree <id>               # dependency graph
+mai kinds                       # all kinds in use
+mai doctor                      # graph health
 ```
 
-### Setup
+### Machine-readable output
 
 ```bash
-mai init                       # Create .maitake/hooks/ with default pre-write hook
+mai --json ls                   # JSON array of summaries
+mai --json show <id>            # JSON state with events + comments
+mai --json context <path>       # JSON array of states
+mai -C /path/to/repo --json ls  # query a different repo
 ```
 
-## How it works
+### Setup & sync
 
-Every ticket, warning, review finding, or comment is a **JSON line** stored in `refs/notes/maitake` via git notes.
-
-Nothing is ever mutated. Changes are **event streams**: a ticket's current state is computed by folding its creation note + all events pointing at it.
-
-```
-Creation:  {"id":"tre-5c4a","kind":"ticket","status":"open",...}
-Event:     {"kind":"event","field":"status","value":"in_progress",...}
-Comment:   {"kind":"comment","body":"Found root cause",...}
-Event:     {"kind":"event","field":"status","value":"closed",...}
+```bash
+mai init [--remote R] [--block H]   # hooks + config + .gitignore
+mai sync                            # manual fetch + merge + push
+mai migrate [--dir .tickets/] [--dry-run]  # import tk tickets
 ```
 
-Fold result: status=closed, with 1 comment in history.
+## Setup
 
-### File-located comments
+```bash
+mai init --remote forgejo --block github.com
+```
 
-Comments can target a specific file (and optionally a line range) within a ticket:
+This creates three things:
+
+1. **`.maitake/hooks/pre-write`** — scans notes for secrets before every write (gitleaks with regex fallback)
+2. **`.maitake/config`** — sync remote + blocked hosts
+3. **`.gitignore` entry** — keeps `.maitake/` out of the repo
+
+### Config
+
+```
+remote forgejo
+blocked-host github.com
+blocked-host gitlab.com
+```
+
+## Sync
+
+Every write auto-pushes `refs/notes/maitake` to the configured remote. On conflict: fetch + set-union merge + retry. Push failures warn but never block.
+
+Manual sync pulls remote changes:
+
+```bash
+mai sync    # fetch + merge + push
+```
+
+## Hooks
+
+Hooks live in `.maitake/hooks/` (per-repo) or `~/.maitake/hooks/` (global fallback). Per-repo wins when both exist.
+
+| Hook | When | Receives |
+|---|---|---|
+| `pre-write` | Before every note write | JSON note on stdin |
+| `post-push` | After every successful auto-push | `MAI_REMOTE`, `MAI_REF`, `MAI_REPO_PATH` env vars |
+
+Exit non-zero from `pre-write` to reject the write. `post-push` failures warn but don't block.
+
+### Example hooks
+
+```bash
+# Secret scanning (installed by default with mai init)
+cp examples/hooks/pre-write-gitleaks .maitake/hooks/pre-write
+
+# Sync to GitHub Issues (requires gh CLI)
+cp examples/hooks/post-push-github .maitake/hooks/post-push
+
+# Sync to Forgejo Issues (requires curl + jq)
+cp examples/hooks/post-push-forgejo .maitake/hooks/post-push
+```
+
+### Global hooks
+
+Set up once for all repos:
+
+```bash
+mkdir -p ~/.maitake/hooks
+cp examples/hooks/pre-write-gitleaks ~/.maitake/hooks/pre-write
+cp examples/hooks/post-push-github ~/.maitake/hooks/post-push
+chmod +x ~/.maitake/hooks/*
+```
+
+Every repo gets these unless it provides its own.
+
+## File-located comments
+
+Comments can target specific files (and lines) within a ticket:
 
 ```bash
 mai ticket "Auth hardening" --target src/auth.ts --target src/http.ts
-mai add-note tre-5c4a --file src/auth.ts "Add mutex around token refresh"
-mai add-note tre-5c4a --file src/http.ts "Add backoff to retry logic"
+mai add-note mt-5c4a --file src/auth.ts "Add mutex around token refresh"
+mai add-note mt-5c4a --file src/http.ts --line 15 "Missing backoff"
 ```
 
-When you run `mai context src/auth.ts`, you see the ticket AND only the comments about auth.ts — not the http.ts comments. This means review agents can leave findings on specific files within a ticket, and fix agents see exactly what needs attention when they check context.
+`mai context src/auth.ts` shows the ticket and only auth.ts comments — not http.ts comments. Review agents leave findings on files, fix agents see exactly what to address.
 
-### Privacy
+## Branch tracking
 
-Notes refs don't push by default. Explicit opt-in per remote:
+Every JSON event records the git branch at write time. No flags needed — it's automatic.
 
-```bash
-# Push to private forgejo, never to GitHub
-git config --add remote.forgejo.push '+refs/notes/maitake:refs/notes/maitake'
+```json
+{"kind":"ticket","title":"Fix auth","branch":"feature/auth","timestamp":"..."}
+{"kind":"event","field":"status","value":"closed","branch":"main","timestamp":"..."}
 ```
 
-### Guard hooks
+Closed from `main` tells you the feature branch was merged.
 
-`.maitake/hooks/pre-write` scans every note before it enters git. Default hook catches leaked secrets. Replace with your own scanner.
+## Index cache
 
-### Artifact tickets
+The index caches in `~/.maitake/cache/`, keyed by the notes ref tip SHA. Cache invalidates automatically on every write. Cold start reads from git; warm start skips all git round-trips.
 
-`mai review` creates tickets with `type: artifact` — born closed by default. They don't show up in `mai ls` or `mai context` unless explicitly queried. Use for review findings, research results, ADRs, and other non-work records.
+## Artifact tickets
+
+`mai review` creates tickets with `type: artifact` — born closed. They don't appear in `mai ls` or `mai context` unless you query explicitly with `--status=all`. Use for review findings, research results, ADRs, and other records.
 
 ## Migration from tk
 
 ```bash
-mai migrate-legacy --tickets-dir .tickets/
+mai migrate --dir .tickets/           # import all tickets
+mai migrate --dir .tickets/ --dry-run # preview without writing
 ```
 
-Preserves original IDs, timestamps, deps, links, comments. Old-format files (no YAML frontmatter) are skipped gracefully.
+Preserves original IDs, timestamps, deps, links, parent refs, Forgejo issue numbers, and comments. Old-format files without YAML frontmatter are skipped.
 
-## Design references
+## Privacy
+
+Notes refs don't push by default — git ignores them. Only the remote configured in `.maitake/config` receives notes. Blocked hosts are checked before every push.
+
+## Design
+
+- **Event-sourced** — immutable JSON lines, state computed by folding
+- **Append-only** — changes via events, never mutation
+- **Set-union merge** — `cat | sort | uniq` resolves conflicts (inherited from git-appraise)
+- **Kind-agnostic** — tickets, warnings, constraints, decisions, reviews are all notes with different `kind` fields
+- **Performance** — 10,000 notes: index build <20ms, query <1ms. Cache eliminates git reads on warm start.
+
+### References
 
 - [openprose/mycelium](https://github.com/openprose/mycelium) — git notes substrate
 - [google/git-appraise](https://github.com/google/git-appraise) — code review on git notes (Apache 2.0, repository package adapted)
-- [1st1/lat.md](https://github.com/1st1/lat.md) — knowledge graph direction (north star for docs layer)
+- [1st1/lat.md](https://github.com/1st1/lat.md) — knowledge graph north star
