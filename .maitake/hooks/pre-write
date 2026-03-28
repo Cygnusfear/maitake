@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Gitleaks if available
+if command -v gitleaks &>/dev/null; then
+    gitleaks detect --pipe --no-banner 2>&1
+    exit $?
+fi
+
+# Fallback: catch the obvious stuff
+content=$(cat)
+patterns=(
+    'AKIA[0-9A-Z]{16}'
+    '-----BEGIN.*PRIVATE KEY-----'
+    'ghp_[A-Za-z0-9]{36}'
+    'gho_[A-Za-z0-9]{36}'
+    'sk-[A-Za-z0-9]{48}'
+    'eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*'
+)
+
+for pattern in "${patterns[@]}"; do
+    if echo "$content" | grep -qE "$pattern"; then
+        echo "maitake pre-write: possible secret detected (pattern: $pattern)" >&2
+        echo "Use --skip-hooks to bypass (not recommended)" >&2
+        exit 1
+    fi
+done
+
+exit 0

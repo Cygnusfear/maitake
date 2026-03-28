@@ -45,6 +45,12 @@ func main() {
 		withEngine(func(e notes.Engine) { runSync(e, args) })
 	case "migrate":
 		withEngine(func(e notes.Engine) { runMigrate(e, args) })
+	case "check":
+		withEngine(func(e notes.Engine) { runCheck(e, args) })
+	case "refs":
+		withEngine(func(e notes.Engine) { runRefs(e, args) })
+	case "expand":
+		withEngine(func(e notes.Engine) { runExpand(e, args) })
 	case "create":
 		withEngine(func(e notes.Engine) { runCreate(e, args) })
 	case "show":
@@ -169,6 +175,11 @@ Setup:
   init [--remote R] [--block H]  Create .maitake/ with hooks, config, gitignore
   sync                           Manual fetch + merge + push
   migrate [--dir PATH] [--dry-run]  Import tk .tickets/*.md into maitake
+
+Knowledge graph:
+  check                          Validate all [[refs]] in notes + // @mai: in code
+  refs <id>                      Find code + notes referencing a target
+  expand <text>                  Resolve [[refs]] in text with note context
 
 Create options:
   -k, --kind KIND            Note kind (ticket, warning, review, etc.)

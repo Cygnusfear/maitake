@@ -1,0 +1,61 @@
+# Before starting work
+
+- Run `mai context <file>` on files you'll touch — see tickets, warnings, constraints, review findings.
+- Run `mai expand <prompt>` to resolve any `[[refs]]` in your task description.
+
+# Post-task checklist
+
+After every task:
+
+- [ ] Run `mai check` — all `[[refs]]` in notes and `// @mai:` code refs must resolve
+- [ ] Close tickets you resolved: `mai close <id> -m "summary"`
+- [ ] Leave warnings for fragile code: `mai warn <path> "what to watch out for"`
+
+# Commands
+
+```bash
+mai show <id>                   # read a ticket/note
+mai ls                          # open work queue
+mai context <path>              # everything about a file
+mai check                       # validate all refs
+mai refs <id>                   # find what references a note
+mai expand "text with [[refs]]" # resolve refs with context
+mai ready                       # unblocked work
+mai blocked                     # stuck on deps
+```
+
+# Linking code to notes
+
+Annotate source code with `// @mai:` comments to tie implementation to tickets, decisions, or docs:
+
+```typescript
+// @mai: [[tre-5c4a]]
+export function refreshToken() {
+  // ...
+}
+```
+
+```python
+# @mai: [[architecture#Auth]]
+def validate_token():
+    ...
+```
+
+```rust
+// @mai: [[tre-5c4a]]
+fn refresh_token() {
+    // ...
+}
+```
+
+`mai check` validates these resolve. `mai refs <id>` finds all code referencing a note.
+
+# Wiki links in notes
+
+Note bodies can reference other notes with `[[note-id]]`:
+
+```bash
+mai add-note tre-5c4a "See [[wrn-a4f2]] for the race condition warning"
+```
+
+`mai check` validates these too. `mai expand` resolves them with context for agents.
