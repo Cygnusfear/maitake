@@ -591,7 +591,28 @@ func (e *RealEngine) autoPush(ref git.NotesRef) {
 		// Retry push after merge
 		if retryErr := e.repo.PushNotes(remote, refPattern); retryErr != nil {
 			fmt.Fprintf(os.Stderr, "mai: warning: push failed after merge: %v\n", retryErr)
+			return
 		}
+	}
+
+	// Fire post-push hook
+	e.runPostPushHook(remote, refPattern)
+}
+
+// runPostPushHook fires .maitake/hooks/post-push after a successful push.
+// The hook receives the remote name and ref as env vars.
+// Failures warn to stderr — they never block the push.
+func (e *RealEngine) runPostPushHook(remote, ref string) {
+	if !guard.HookExists(e.maitakeDir, "post-push") {
+		return
+	}
+	env := map[string]string{
+		"MAI_REMOTE":    remote,
+		"MAI_REF":       ref,
+		"MAI_REPO_PATH": e.repoPath,
+	}
+	if err := guard.RunHook(e.maitakeDir, "post-push", nil, env); err != nil {
+		fmt.Fprintf(os.Stderr, "mai: warning: post-push hook: %v\n", err)
 	}
 }
 

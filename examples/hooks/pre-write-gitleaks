@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+#
+# pre-write hook: scan for secrets before writing a note.
+# Receives JSON note content on stdin. Exit non-zero to reject.
+#
+# Install:
+#   cp examples/hooks/pre-write-gitleaks .maitake/hooks/pre-write
+#   chmod +x .maitake/hooks/pre-write
+#
+# Or: mai init (creates this automatically)
+
+# Gitleaks if available
+if command -v gitleaks &>/dev/null; then
+    gitleaks detect --pipe --no-banner 2>&1
+    exit $?
+fi
+
+# Fallback: catch the obvious stuff
+content=$(cat)
+patterns=(
+    'AKIA[0-9A-Z]{16}'                                           # AWS access key
+    '-----BEGIN.*PRIVATE KEY-----'                                # Private keys
+    'ghp_[A-Za-z0-9]{36}'                                        # GitHub PAT
+    'gho_[A-Za-z0-9]{36}'                                        # GitHub OAuth
+    'sk-[A-Za-z0-9]{48}'                                         # OpenAI API key
+    'eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*'     # JWT
+)
+
+for pattern in "${patterns[@]}"; do
+    if echo "$content" | grep -qE "$pattern"; then
+        echo "maitake pre-write: possible secret detected (pattern: $pattern)" >&2
+        echo "Install gitleaks for better detection: https://github.com/gitleaks/gitleaks" >&2
+        exit 1
+    fi
+done
+
+exit 0

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+#
+# post-push hook: sync maitake tickets to GitHub Issues.
+# Fires after every successful auto-push of refs/notes/maitake.
+#
+# Env vars provided by mai:
+#   MAI_REMOTE     — remote name (e.g. "origin")
+#   MAI_REF        — ref that was pushed (e.g. "refs/notes/maitake")
+#   MAI_REPO_PATH  — absolute path to the repo
+#
+# Requirements:
+#   - `gh` CLI authenticated (https://cli.github.com)
+#   - `mai` on PATH
+#   - `jq` on PATH
+#
+# Install:
+#   cp examples/hooks/post-push-github .maitake/hooks/post-push
+#   chmod +x .maitake/hooks/post-push
+#
+# What it does:
+#   - Lists all open + in_progress tickets via `mai --json ls`
+#   - For each ticket, creates or updates a GitHub issue
+#   - Maps: title, body, status (open/closed), tags → labels, assignee
+#   - Tracks the GitHub issue number in a local mapping file
+#   - Closes GitHub issues when mai tickets close
+#
+
+REPO_PATH="${MAI_REPO_PATH:-.}"
+MAP_FILE="$REPO_PATH/.maitake/github-issue-map"
+
+# Ensure mapping file exists
+mkdir -p "$(dirname "$MAP_FILE")"
+touch "$MAP_FILE"
+
+# Get the GitHub repo (owner/name) from the remote
+GITHUB_REPO=$(cd "$REPO_PATH" && gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null) || {
+    echo "post-push-github: could not detect GitHub repo (is gh authenticated?)" >&2
+    exit 0  # Don't block the push
+}
+
+lookup_issue() {
+    local mai_id="$1"
+    grep "^${mai_id}=" "$MAP_FILE" 2>/dev/null | cut -d= -f2
+}
+
+save_mapping() {
+    local mai_id="$1" gh_number="$2"
+    # Remove old entry if exists
+    grep -v "^${mai_id}=" "$MAP_FILE" > "${MAP_FILE}.tmp" 2>/dev/null || true
+    echo "${mai_id}=${gh_number}" >> "${MAP_FILE}.tmp"
+    mv "${MAP_FILE}.tmp" "$MAP_FILE"
+}
+
+status_to_state() {
+    case "$1" in
+        closed) echo "closed" ;;
+        *)      echo "open" ;;
+    esac
+}
+
+# Sync all tickets (open, in_progress, and recently closed)
+mai -C "$REPO_PATH" --json ls --status=all | jq -c '.[]' | while read -r ticket; do
+    ID=$(echo "$ticket" | jq -r '.id')
+    TITLE=$(echo "$ticket" | jq -r '.title // .id')
+    STATUS=$(echo "$ticket" | jq -r '.status')
+    TAGS=$(echo "$ticket" | jq -r '(.tags // []) | join(",")')
+
+    # Get full body from show
+    BODY=$(mai -C "$REPO_PATH" --json show "$ID" | jq -r '.body // ""')
+    BODY="**mai:** \`${ID}\`\n\n${BODY}"
+
+    GH_STATE=$(status_to_state "$STATUS")
+    GH_NUMBER=$(lookup_issue "$ID")
+
+    if [ -n "$GH_NUMBER" ]; then
+        # Update existing issue
+        gh issue edit "$GH_NUMBER" \
+            --repo "$GITHUB_REPO" \
+            --title "$TITLE" \
+            --body "$(echo -e "$BODY")" \
+            2>/dev/null || true
+
+        # Sync state
+        if [ "$GH_STATE" = "closed" ]; then
+            gh issue close "$GH_NUMBER" --repo "$GITHUB_REPO" 2>/dev/null || true
+        else
+            gh issue reopen "$GH_NUMBER" --repo "$GITHUB_REPO" 2>/dev/null || true
+        fi
+    else
+        # Create new issue
+        GH_NUMBER=$(gh issue create \
+            --repo "$GITHUB_REPO" \
+            --title "$TITLE" \
+            --body "$(echo -e "$BODY")" \
+            --label "$TAGS" \
+            2>/dev/null | grep -oE '[0-9]+$') || continue
+
+        save_mapping "$ID" "$GH_NUMBER"
+
+        # Close immediately if ticket is already closed
+        if [ "$GH_STATE" = "closed" ]; then
+            gh issue close "$GH_NUMBER" --repo "$GITHUB_REPO" 2>/dev/null || true
+        fi
+    fi
+done
+
+exit 0
