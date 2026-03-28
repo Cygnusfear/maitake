@@ -615,3 +615,5 @@ mai migrate-legacy [--dry-run]
 
 During transition, `mai` checks both refs/notes and `.tickets/`. Unified view. Gradual migration.
 
+EDITED CONTENT
+REGRESSION CHECK
