@@ -114,6 +114,9 @@ type StateSummary struct {
 	Title     string    `json:"title,omitempty"`
 	Tags      []string  `json:"tags,omitempty"`
 	Targets   []string  `json:"targets,omitempty"`
+	Deps      []string  `json:"deps,omitempty"`
+	Links     []string  `json:"links,omitempty"`
+	Assignee  string    `json:"assignee,omitempty"`
 	Resolved  *bool     `json:"resolved,omitempty"`
 	Branch    string    `json:"branch,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`

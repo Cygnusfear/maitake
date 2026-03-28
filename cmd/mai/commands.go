@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cygnusfear/maitake/pkg/guard"
+	"github.com/cygnusfear/maitake/pkg/migrate"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
@@ -74,6 +75,60 @@ func runInit(args []string) {
 			fmt.Println("Added .maitake/ to .gitignore")
 		}
 	}
+}
+
+func runMigrate(e notes.Engine, args []string) {
+	dir := ".tickets"
+	dryRun := false
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--dry-run":
+			dryRun = true
+		}
+	}
+
+	report, err := migrate.Run(e, migrate.Options{
+		TicketsDir: dir,
+		DryRun:     dryRun,
+	})
+	if err != nil {
+		fatal("migrate: %v", err)
+	}
+
+	if globalJSON {
+		printJSON(report)
+		return
+	}
+
+	for _, r := range report.Results {
+		status := "✓"
+		if r.Skipped {
+			status = "⊘"
+		} else if r.Error != nil {
+			status = "✗"
+		}
+		fmt.Printf("  %s %s %s\n", status, r.ID, r.Title)
+		if r.Error != nil {
+			fmt.Printf("    error: %v\n", r.Error)
+		}
+	}
+	fmt.Printf("\n%d/%d migrated", report.Migrated, report.Total)
+	if report.Skipped > 0 {
+		fmt.Printf(", %d skipped", report.Skipped)
+	}
+	if report.Errors > 0 {
+		fmt.Printf(", %d errors", report.Errors)
+	}
+	if dryRun {
+		fmt.Print(" (dry run)")
+	}
+	fmt.Println()
 }
 
 func runSync(e notes.Engine, args []string) {
