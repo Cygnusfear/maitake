@@ -68,9 +68,13 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		return nil, fmt.Errorf("kind is required")
 	}
 
-	id, err := GenerateID(e.repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("generating ID: %w", err)
+	id := opts.ID
+	if id == "" {
+		var err error
+		id, err = GenerateID(e.repoPath)
+		if err != nil {
+			return nil, fmt.Errorf("generating ID: %w", err)
+		}
 	}
 
 	note := &Note{

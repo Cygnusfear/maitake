@@ -139,6 +139,7 @@ type DoctorReport struct {
 
 // CreateOptions controls note creation.
 type CreateOptions struct {
+	ID       string   // if set, use this ID instead of generating one
 	Kind     string
 	Title    string
 	Type     string
