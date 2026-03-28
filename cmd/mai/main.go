@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cygnusfear/maitake/pkg/git"
@@ -51,6 +52,8 @@ func main() {
 		} else {
 			fatal("usage: mai docs sync [--dir PATH]")
 		}
+	case "daemon":
+		runDaemon(args)
 	case "check":
 		withEngine(func(e notes.Engine) { runCheck(e, args) })
 	case "refs":
@@ -137,7 +140,34 @@ func withEngine(fn func(notes.Engine)) {
 	if err != nil {
 		fatal("initializing engine: %v", err)
 	}
+
+	// Register this repo for daemon discovery
+	registerRepo(repo.GetPath())
+
 	fn(engine)
+}
+
+func registerRepo(repoPath string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	reposFile := filepath.Join(home, ".maitake", "repos")
+	os.MkdirAll(filepath.Dir(reposFile), 0755)
+
+	data, _ := os.ReadFile(reposFile)
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if strings.TrimSpace(line) == repoPath {
+			return
+		}
+	}
+
+	f, err := os.OpenFile(reposFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(repoPath + "\n")
 }
 
 func fatal(format string, args ...any) {
@@ -187,6 +217,7 @@ Setup:
 
 Docs:
   docs sync [--dir PATH]         Bidirectional sync: doc notes ↔ markdown files
+  daemon                         Watch all repos, sync file changes to notes
 
 Knowledge graph:
   check                          Validate all [[refs]] in notes + // @mai: in code
