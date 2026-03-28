@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/notes"
@@ -144,7 +145,89 @@ func withEngine(fn func(notes.Engine)) {
 	// Register this repo for daemon discovery
 	registerRepo(repo.GetPath())
 
+	// Auto-start daemon if any repo has docs.watch enabled
+	ensureDaemon()
+
 	fn(engine)
+}
+
+func ensureDaemon() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	pidFile := filepath.Join(home, ".maitake", "daemon.pid")
+
+	// Check if already running
+	if data, err := os.ReadFile(pidFile); err == nil {
+		pid := strings.TrimSpace(string(data))
+		if pid != "" {
+			// Check if process is alive
+			proc := fmt.Sprintf("/proc/%s", pid)
+			if _, err := os.Stat(proc); err == nil {
+				return // Linux: running
+			}
+			// macOS: try kill -0
+			if checkPidAlive(pid) {
+				return
+			}
+		}
+	}
+
+	// Check if any repo has watch enabled
+	repos := loadRepoList()
+	hasWatch := false
+	for _, r := range repos {
+		cfg := notes.ReadConfig(filepath.Join(r, ".maitake"))
+		if cfg.Docs.Watch {
+			hasWatch = true
+			break
+		}
+	}
+	if !hasWatch {
+		return
+	}
+
+	// Spawn daemon
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	logFile := filepath.Join(home, ".maitake", "daemon.log")
+	out, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+
+	proc, err := os.StartProcess(exe, []string{exe, "daemon"}, &os.ProcAttr{
+		Dir:   "/",
+		Files: []*os.File{nil, out, out},
+		Sys:   daemonSysProcAttr(),
+	})
+	if err != nil {
+		out.Close()
+		return
+	}
+
+	// Write PID
+	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", proc.Pid)), 0644)
+	proc.Release()
+	out.Close()
+}
+
+func checkPidAlive(pid string) bool {
+	// Use os.FindProcess + signal 0 (works on macOS and Linux)
+	var p int
+	if _, err := fmt.Sscanf(pid, "%d", &p); err != nil {
+		return false
+	}
+	proc, err := os.FindProcess(p)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
 }
 
 func registerRepo(repoPath string) {
