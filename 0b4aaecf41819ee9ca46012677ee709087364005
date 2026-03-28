@@ -1,1 +1,3 @@
 {"id":"mai-qn48","kind":"doc","title":"A","edges":[{"type":"targets","target":{"kind":"path","ref":"docs/a.md"}}],"body":"asdascdasdc\n\nshit\n\nasdfasdf\n\nshall we play a","timestamp":"2026-03-28T21:43:12Z","branch":"main"}
+
+{"kind":"event","field":"body","value":"asdascdasdc\n\nshit\n\nasdfasdf\n\nshall we play a\n game?","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-qn48"}}],"timestamp":"2026-03-28T21:43:14Z","branch":"main"}
