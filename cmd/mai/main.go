@@ -40,6 +40,44 @@ func main() {
 	cmd := rawArgs[0]
 	args := rawArgs[1:]
 
+	if cmd == "-h" || cmd == "--help" || cmd == "help" {
+		fmt.Println(`mai — git-native notes, tickets, and reviews
+
+Usage: mai <command> [args]
+
+Commands:
+  ticket <title> [type]   Create a ticket (default type: task)
+  review <title>          Create a review
+  artifact <title>        Create an artifact (born closed)
+  create [flags] [title]  Create any note kind
+  show <id>               Show note details
+  ls [flags]              List notes (default: open + in_progress)
+  start <id>              Set status to in_progress
+  close <id> [-m msg]     Close a note
+  reopen <id>             Reopen a closed note
+  add-note <id> [-m msg]  Add a comment
+  tag <id> <tag>          Add a tag
+  assign <id> <who>       Set assignee
+  dep <id> <dep-id>       Add dependency
+  link <id> <target-id>   Add link
+  context <id>            Show related notes
+  ready                   List ready-to-work tickets
+  blocked                 List blocked tickets
+  docs sync               Bidirectional docs ↔ notes sync
+  check [path]            Validate code refs and wiki links
+  refs <id>               Reverse-lookup references
+  init                    Initialize maitake in a repo
+  migrate                 Import tk tickets
+  doctor                  Health check
+
+Flags (before command):
+  -C <dir>     Run in a different repo
+  --json       Machine-readable output
+
+Run 'mai <command> -h' for command-specific help.`)
+		return
+	}
+
 	switch cmd {
 	case "init":
 		runInit(args)
@@ -307,6 +345,7 @@ Create options:
 type flagSet struct {
 	kind     string
 	typ      string
+	title    string
 	priority int
 	assignee string
 	tags     []string
@@ -314,6 +353,7 @@ type flagSet struct {
 	body     string
 	status   string
 	message  string
+	help     bool
 }
 
 func parseFlags(args []string) (flagSet, []string) {
@@ -322,15 +362,19 @@ func parseFlags(args []string) (flagSet, []string) {
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "-h", "--help":
+			f.help = true
 		case "-k", "--kind":
 			i++; if i < len(args) { f.kind = args[i] }
-		case "-t", "--type":
+		case "-t", "--title":
+			i++; if i < len(args) { f.title = args[i] }
+		case "--type":
 			i++; if i < len(args) { f.typ = args[i] }
 		case "-p", "--priority":
 			i++; if i < len(args) { fmt.Sscanf(args[i], "%d", &f.priority) }
 		case "-a", "--assignee":
 			i++; if i < len(args) { f.assignee = args[i] }
-		case "--tags":
+		case "-l", "--tags":
 			i++; if i < len(args) { f.tags = strings.Split(args[i], ",") }
 		case "--target":
 			i++; if i < len(args) { f.targets = append(f.targets, args[i]) }
@@ -343,6 +387,8 @@ func parseFlags(args []string) (flagSet, []string) {
 				f.status = strings.TrimPrefix(args[i], "--status=")
 			} else if strings.HasPrefix(args[i], "-k=") {
 				f.kind = strings.TrimPrefix(args[i], "-k=")
+			} else if strings.HasPrefix(args[i], "-") {
+				fatal("unknown flag: %s", args[i])
 			} else {
 				positional = append(positional, args[i])
 			}

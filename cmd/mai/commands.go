@@ -141,9 +141,32 @@ func runSync(e notes.Engine, args []string) {
 func runCreate(e notes.Engine, args []string) {
 	f, pos := parseFlags(args)
 
-	title := ""
-	if len(pos) > 0 {
+	if f.help {
+		fmt.Fprintln(os.Stderr, `Usage: mai create [flags] [title] [type]
+
+Flags:
+  -t, --title       Title
+  -k, --kind        Kind (ticket, doc, review, warning, artifact)
+      --type        Type (task, bug, etc.)
+  -p, --priority    Priority (0=critical, 1=high, 2=normal, 3=low)
+  -a, --assignee    Assignee
+  -l, --tags        Comma-separated tags
+  -d, --description Body text
+      --target      Target edge (file path, note ID)
+
+Shortcuts: mai ticket, mai review, mai artifact`)
+		return
+	}
+
+	// Title: -t flag wins, then first positional
+	title := f.title
+	if title == "" && len(pos) > 0 {
 		title = pos[0]
+	}
+
+	// Type: second positional wins (explicit user intent), then --type flag
+	if len(pos) > 1 {
+		f.typ = pos[1]
 	}
 
 	if f.kind == "" {
@@ -639,8 +662,7 @@ func allDepsResolved(e notes.Engine, s *notes.State) bool {
 // Shortcuts
 
 func runShortcut(e notes.Engine, kind, typ string, args []string) {
-	// Prepend kind and type flags
-	newArgs := []string{"-k", kind, "-t", typ}
+	newArgs := []string{"-k", kind, "--type", typ}
 	newArgs = append(newArgs, args...)
 	runCreate(e, newArgs)
 }
