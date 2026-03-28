@@ -1,0 +1,185 @@
+// Command mai is the maitake CLI — git-native notes, tickets, and reviews.
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/cygnusfear/maitake/pkg/git"
+	"github.com/cygnusfear/maitake/pkg/notes"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		runList(nil, []string{})
+		return
+	}
+
+	cmd := os.Args[1]
+	args := os.Args[2:]
+
+	switch cmd {
+	case "init":
+		runInit(args)
+	case "create":
+		withEngine(func(e notes.Engine) { runCreate(e, args) })
+	case "show":
+		withEngine(func(e notes.Engine) { runShow(e, args) })
+	case "ls", "list":
+		withEngine(func(e notes.Engine) { runList(e, args) })
+	case "start":
+		withEngine(func(e notes.Engine) { runLifecycle(e, "in_progress", args) })
+	case "close":
+		withEngine(func(e notes.Engine) { runClose(e, args) })
+	case "reopen":
+		withEngine(func(e notes.Engine) { runLifecycle(e, "open", args) })
+	case "add-note":
+		withEngine(func(e notes.Engine) { runAddNote(e, args) })
+	case "tag":
+		withEngine(func(e notes.Engine) { runTag(e, args) })
+	case "assign":
+		withEngine(func(e notes.Engine) { runAssign(e, args) })
+	case "dep":
+		withEngine(func(e notes.Engine) { runDep(e, args) })
+	case "link":
+		withEngine(func(e notes.Engine) { runLink(e, args) })
+	case "context":
+		withEngine(func(e notes.Engine) { runContext(e, args) })
+	case "kinds":
+		withEngine(func(e notes.Engine) { runKinds(e) })
+	case "doctor":
+		withEngine(func(e notes.Engine) { runDoctor(e) })
+	case "ready":
+		withEngine(func(e notes.Engine) { runReady(e, args) })
+	case "blocked":
+		withEngine(func(e notes.Engine) { runBlocked(e, args) })
+	// Shortcuts
+	case "ticket":
+		withEngine(func(e notes.Engine) { runShortcut(e, "ticket", "task", args) })
+	case "warn":
+		withEngine(func(e notes.Engine) { runWarn(e, args) })
+	case "review":
+		withEngine(func(e notes.Engine) { runShortcut(e, "review", "artifact", args) })
+	case "help", "--help", "-h":
+		printUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func withEngine(fn func(notes.Engine)) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fatal("getting working directory: %v", err)
+	}
+	repo, err := git.NewGitRepo(cwd)
+	if err != nil {
+		fatal("not a git repository (or any parent)")
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		fatal("initializing engine: %v", err)
+	}
+	fn(engine)
+}
+
+func fatal(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "mai: "+format+"\n", args...)
+	os.Exit(1)
+}
+
+func printUsage() {
+	fmt.Print(`mai — git-native notes, tickets, and reviews
+
+Usage: mai <command> [args]
+
+Create:
+  create [title] [options]   Create a note with a generated ID
+  ticket [title] [options]   Shortcut: create -k ticket -t task
+  warn <path> [message]      Shortcut: create -k warning --target <path>
+  review [title] [options]   Shortcut: create -k review -t artifact
+
+Lifecycle:
+  start <id>                 Status → in_progress
+  close <id> [-m message]    Status → closed
+  reopen <id>                Status → open
+  add-note <id> [text]       Append comment
+  tag <id> +tag / -tag       Add or remove tag
+  assign <id> <name>         Set assignee
+  dep <id> <dep-id>          Add dependency
+  link <id> <id>             Symmetric link
+
+Query:
+  show <id>                  Full note state
+  ls [--status=X] [-k kind]  List notes
+  context <path>             Everything about a file
+  ready                      Open notes with deps resolved
+  blocked                    Open notes with unresolved deps
+  kinds                      List all kinds in use
+  doctor                     Graph health report
+
+Setup:
+  init                       Create .maitake/hooks/ with defaults
+
+Create options:
+  -k, --kind KIND            Note kind (ticket, warning, review, etc.)
+  -t, --type TYPE            Ticket type (task, bug, feature, artifact, etc.)
+  -p, --priority N           Priority 0-4
+  -a, --assignee NAME        Assignee
+  --tags TAG,TAG             Comma-separated tags
+  --target PATH              File path this note targets
+  -d, --description TEXT     Body text
+  -m, --message TEXT         Alias for -d
+`)
+}
+
+// parseFlags extracts known flags from args, returns remaining positional args.
+type flagSet struct {
+	kind     string
+	typ      string
+	priority int
+	assignee string
+	tags     []string
+	targets  []string
+	body     string
+	status   string
+	message  string
+}
+
+func parseFlags(args []string) (flagSet, []string) {
+	var f flagSet
+	var positional []string
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-k", "--kind":
+			i++; if i < len(args) { f.kind = args[i] }
+		case "-t", "--type":
+			i++; if i < len(args) { f.typ = args[i] }
+		case "-p", "--priority":
+			i++; if i < len(args) { fmt.Sscanf(args[i], "%d", &f.priority) }
+		case "-a", "--assignee":
+			i++; if i < len(args) { f.assignee = args[i] }
+		case "--tags":
+			i++; if i < len(args) { f.tags = strings.Split(args[i], ",") }
+		case "--target":
+			i++; if i < len(args) { f.targets = append(f.targets, args[i]) }
+		case "-d", "--description", "-m", "--message":
+			i++; if i < len(args) { f.body = args[i] }
+		case "--status":
+			i++; if i < len(args) { f.status = args[i] }
+		default:
+			if strings.HasPrefix(args[i], "--status=") {
+				f.status = strings.TrimPrefix(args[i], "--status=")
+			} else if strings.HasPrefix(args[i], "-k=") {
+				f.kind = strings.TrimPrefix(args[i], "-k=")
+			} else {
+				positional = append(positional, args[i])
+			}
+		}
+	}
+	return f, positional
+}
