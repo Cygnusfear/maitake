@@ -1,1 +1,3 @@
 {"id":"mai-2mlc","kind":"ticket","type":"create -b flag eaten as title when no positional arg given","priority":1,"tags":["bug","cli"],"body":"When running:\n  mai create -k doc -t 'Test Doc Sync' -b 'This is body text'\n\nThe -b flag value gets parsed as the title because -t consumed 'Test Doc Sync' as type, leaving '-b' as the first positional arg (title).\n\nparseFlags does not validate flag combinations or warn about ambiguous parsing.","timestamp":"2026-03-28T22:38:55Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-2mlc"}}],"body":"fixed in dda4596 — CLI flag overhaul","timestamp":"2026-03-28T22:57:13Z","branch":"main"}
