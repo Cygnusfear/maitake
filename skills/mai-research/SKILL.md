@@ -9,7 +9,7 @@ description: Use when conducting research, oracle investigations, or delphi cons
 
 ```bash
 # Coordinator creates the research ticket
-mai ticket "Investigate token refresh approaches" -p 2 --tags research \
+mai ticket "Investigate token refresh approaches" -p 2 -l research \
   -d "Research mutex vs single-flight vs channel-based refresh.
 Compare: performance, error handling, complexity."
 # → res-1234
@@ -55,16 +55,16 @@ mai close res-1234 -m "Research complete. Recommendation: mutex."
 
 ```bash
 # Coordinator creates the delphi epic
-mai ticket "Delphi: auth refresh strategy" -p 1 --tags research,delphi \
+mai ticket "Delphi: auth refresh strategy" -p 1 -l research,delphi \
   -d "3 independent oracles investigate the same question."
 # → del-5678
 
 # Create sub-tickets for each oracle
-mai ticket "Oracle 1: auth refresh" --tags research,oracle
+mai ticket "Oracle 1: auth refresh" -l research,oracle
 # → orc-1111
-mai ticket "Oracle 2: auth refresh" --tags research,oracle
+mai ticket "Oracle 2: auth refresh" -l research,oracle
 # → orc-2222
-mai ticket "Oracle 3: auth refresh" --tags research,oracle
+mai ticket "Oracle 3: auth refresh" -l research,oracle
 # → orc-3333
 
 mai dep del-5678 orc-1111

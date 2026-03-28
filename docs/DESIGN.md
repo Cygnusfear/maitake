@@ -384,7 +384,7 @@ This keeps the notes ref as a flat list of git notes, each parseable independent
 
 ```bash
 # Create things
-mai create "Fix auth race condition" -k ticket -t task -p 1 --tags auth
+mai create "Fix auth race condition" -k ticket -p 1 -l auth
 mai create "Race condition in refresh" -k warning --target src/auth.ts
 mai create "Must be retryable" -k constraint --target src/auth.ts
 
@@ -445,7 +445,7 @@ mai sync                        # push + pull + merge
 There is no separate `ticket` subcommand vs `note` subcommand vs `review` subcommand. Every note is created with `mai create`, queried with `mai ls`, shown with `mai show`. The `kind` is what differentiates them.
 
 ```bash
-mai create "Fix bug" -k ticket -t task          # ticket
+mai create "Fix bug" -k ticket                  # ticket
 mai create "Footgun here" -k warning             # warning
 mai create "Review auth" -k review-request       # PR
 mai create "Add mutex" -k review                 # review finding
@@ -461,8 +461,8 @@ Common operations get short aliases:
 
 ```bash
 # These are equivalent:
-mai create "Fix bug" -k ticket -t task -p 1
-mai ticket "Fix bug" -t task -p 1
+mai create "Fix bug" -k ticket -p 1
+mai ticket "Fix bug" -p 1
 
 # These are equivalent:
 mai create "Footgun" -k warning --target src/auth.ts
@@ -626,4 +626,5 @@ LIVE EDIT 1774732917
 
 DAEMON_PROBE_1774733791
 POST_FIX_EDIT_1774734008
+
 

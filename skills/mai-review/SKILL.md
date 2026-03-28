@@ -12,7 +12,7 @@ Review findings go **on the files**, not in a ticket body. The fix agent runs `m
 ### Coordinator creates the review ticket
 
 ```bash
-mai ticket "Review: auth hardening" -p 1 --tags review \
+mai ticket "Review: auth hardening" -p 1 -l review \
   --target src/auth.ts --target src/http.ts \
   -d "Review the auth changes. 6-pass review."
 # → tre-5c4a

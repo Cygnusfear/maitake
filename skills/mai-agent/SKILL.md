@@ -47,7 +47,7 @@ mai add-note <ticket-id> --file src/auth.ts --line 42 "line-level detail"
 ### Creating new work
 
 ```bash
-mai ticket "Fix auth race condition" -p 1 --tags auth --target src/auth.ts \
+mai ticket "Fix auth race condition" -p 1 -l auth --target src/auth.ts \
   -d "Token refresh has a race condition."
 ```
 
@@ -126,7 +126,7 @@ mai sync                      # fetch + merge + push
 mai show <id>                 # full state with comments
 mai ls                        # open work queue (default: open + in_progress)
 mai ls -k <kind>              # filter by kind
-mai ls --tags <tag>           # filter by tag
+mai ls -l <tag>           # filter by tag
 mai ls --status=all           # everything including closed
 mai closed                    # recently closed
 mai context <path>            # everything about a file

@@ -14,7 +14,7 @@ go install github.com/cygnusfear/maitake/cmd/mai@latest
 
 ```bash
 mai init --remote origin --block github.com   # set up hooks + sync config
-mai ticket "Fix auth race" -p 1 --tags auth --target src/auth.ts
+mai ticket "Fix auth race" -p 1 -l auth --target src/auth.ts
 mai start mt-5c4a
 mai add-note mt-5c4a --file src/auth.ts --line 42 "Race condition here"
 mai context src/auth.ts                       # see everything about a file
@@ -48,7 +48,7 @@ Closed from `main` — the branch was merged. The event stream tells the story.
 | `mai artifact [title] [opts]` | Record/output (born closed — ADRs, research, mid-mortems) |
 | `mai create [title] [opts]` | Any kind — use `-k`           |
 
-**Options:** `-k kind`, `-t type`, `-p priority`, `-a assignee`, `--tags a,b`, `--target path`, `-d description`
+**Options:** `-k kind`, `-t title`, `--type type`, `-p priority`, `-a assignee`, `-l a,b` (tags), `--target path`, `-d description`
 
 ### Lifecycle
 

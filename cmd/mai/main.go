@@ -287,10 +287,10 @@ Usage: mai <command> [args]
 
 Create:
   create [title] [options]   Create a note with a generated ID
-  ticket [title] [options]   Shortcut: create -k ticket -t task
+  ticket [title] [type]      Shortcut: create -k ticket (default type: task)
   warn <path> [message]      Shortcut: create -k warning --target <path>
   review [title] [options]   Shortcut: create -k review (open, needs response)
-  artifact [title] [options] Shortcut: create -k artifact -t artifact (born closed)
+  artifact [title] [options] Shortcut: create -k artifact (born closed)
 
 Lifecycle:
   start <id>                 Status → in_progress

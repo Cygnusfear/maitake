@@ -10,7 +10,7 @@ description: Use when coordinating work across multiple agents via teams. Create
 ### Tickets
 
 ```bash
-mai ticket "Fix auth race condition" -p 1 --tags auth --target src/auth.ts \
+mai ticket "Fix auth race condition" -p 1 -l auth --target src/auth.ts \
   -d "Token refresh has a race condition. Add single-flight mutex."
 # → tre-5c4a
 ```
@@ -18,10 +18,10 @@ mai ticket "Fix auth race condition" -p 1 --tags auth --target src/auth.ts \
 ### With dependencies
 
 ```bash
-mai ticket "Write auth tests" -p 2 --tags test
+mai ticket "Write auth tests" -p 2 -l test
 # → tre-1111
 
-mai ticket "Implement auth fix" -p 1 --tags fix
+mai ticket "Implement auth fix" -p 1 -l fix
 # → tre-2222
 
 mai dep tre-2222 tre-1111       # fix depends on tests first
@@ -34,7 +34,7 @@ mai dep tree tre-2222
 ### Review tickets
 
 ```bash
-mai ticket "Review auth changes" -p 1 --tags review \
+mai ticket "Review auth changes" -p 1 -l review \
   --target src/auth.ts --target src/http.ts
 # → rev-1234
 ```
@@ -74,7 +74,7 @@ teams delegate [{
 ### Research / oracle
 
 ```bash
-mai create "Investigate token refresh options" -k ticket --tags research \
+mai create "Investigate token refresh options" -k ticket -l research \
   -d "Research mutex vs single-flight vs channel-based approaches."
 # → res-4567
 
@@ -111,7 +111,7 @@ mai close <ticket-id> -m "summary of what was done"
 ```bash
 mai ls                          # open work queue (sorted by priority)
 mai ls -k ticket                # only tickets
-mai ls --tags review            # review tasks
+mai ls -l review            # review tasks
 mai ready                       # unblocked — can start now
 mai blocked                     # waiting on deps
 mai dep tree <epic-id>          # full work breakdown
@@ -125,7 +125,7 @@ The full review-fix-approve cycle:
 
 ```bash
 # 1. Create review ticket
-mai ticket "Review: feature X" --tags review --target src/foo.ts --target src/bar.ts
+mai ticket "Review: feature X" -l review --target src/foo.ts --target src/bar.ts
 
 # 2. Delegate to reviewer
 teams delegate [{"text": "Review ...", "template": "review"}]
