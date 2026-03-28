@@ -22,7 +22,7 @@ func TestFold_CreationOnly(t *testing.T) {
 		Body:      "Fix the race condition.",
 		Time: ts("2026-03-01T10:00:00Z"),
 		Edges: []Edge{
-			{Type: "targets", Target: "path:src/auth.ts"},
+			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
 	}
 
@@ -54,12 +54,12 @@ func TestFold_StatusChanges(t *testing.T) {
 	events := []*Note{
 		{
 			Kind:      "event",
-			Edges:     []Edge{{Type: "starts", Target: "note:tre-5c4a"}},
+			Edges:     []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 			Time: ts("2026-03-01T11:00:00Z"),
 		},
 		{
 			Kind:      "event",
-			Edges:     []Edge{{Type: "closes", Target: "note:tre-5c4a"}},
+			Edges:     []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 			Time: ts("2026-03-01T12:00:00Z"),
 		},
 	}
@@ -79,12 +79,12 @@ func TestFold_ReopenAfterClose(t *testing.T) {
 	events := []*Note{
 		{
 			Kind:      "event",
-			Edges:     []Edge{{Type: "closes", Target: "note:tre-5c4a"}},
+			Edges:     []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 			Time: ts("2026-03-01T11:00:00Z"),
 		},
 		{
 			Kind:      "event",
-			Edges:     []Edge{{Type: "reopens", Target: "note:tre-5c4a"}},
+			Edges:     []Edge{{Type: "reopens", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 			Time: ts("2026-03-01T12:00:00Z"),
 		},
 	}
@@ -179,8 +179,8 @@ func TestFold_DepsAndLinks(t *testing.T) {
 		ID:   "tre-5c4a",
 		Kind: "ticket",
 		Edges: []Edge{
-			{Type: "depends-on", Target: "note:wrn-1234"},
-			{Type: "links", Target: "note:rev-abcd"},
+			{Type: "depends-on", Target: EdgeTarget{Kind: "note", Ref: "wrn-1234"}},
+			{Type: "links", Target: EdgeTarget{Kind: "note", Ref: "rev-abcd"}},
 		},
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
@@ -212,12 +212,12 @@ func TestFold_OutOfOrderTimestamps(t *testing.T) {
 	events := []*Note{
 		{
 			Kind:      "event",
-			Edges:     []Edge{{Type: "closes", Target: "note:tre-5c4a"}},
+			Edges:     []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 			Time: ts("2026-03-01T12:00:00Z"),
 		},
 		{
 			Kind:      "event",
-			Edges:     []Edge{{Type: "starts", Target: "note:tre-5c4a"}},
+			Edges:     []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 			Time: ts("2026-03-01T11:00:00Z"),
 		},
 	}

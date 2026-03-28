@@ -6,7 +6,7 @@ import (
 )
 
 func TestParse_CreationNote(t *testing.T) {
-	raw := []byte(`{"id":"tre-5c4a","kind":"ticket","type":"task","priority":1,"assignee":"Alice","tags":["auth","backend"],"edges":[{"type":"targets","target":"path:src/auth.ts"},{"type":"depends-on","target":"note:wrn-a4f2"}],"body":"# Fix auth race condition\n\nThe token refresh has a race condition."}`)
+	raw := []byte(`{"id":"tre-5c4a","kind":"ticket","type":"task","priority":1,"assignee":"Alice","tags":["auth","backend"],"edges":[{"type":"targets","target":{"kind":"path","ref":"src/auth.ts"}},{"type":"depends-on","target":{"kind":"note","ref":"wrn-a4f2"}}],"body":"# Fix auth race condition\n\nThe token refresh has a race condition."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestParse_CreationNote(t *testing.T) {
 	if len(note.Edges) != 2 {
 		t.Fatalf("Edges = %d", len(note.Edges))
 	}
-	if note.Edges[0].Type != "targets" || note.Edges[0].Target != "path:src/auth.ts" {
+	if note.Edges[0].Type != "targets" || note.Edges[0].Target.Kind != "path" || note.Edges[0].Target.Ref != "src/auth.ts" {
 		t.Errorf("Edge[0] = %+v", note.Edges[0])
 	}
 	if note.Body == "" {
@@ -42,7 +42,7 @@ func TestParse_CreationNote(t *testing.T) {
 }
 
 func TestParse_EventNote(t *testing.T) {
-	raw := []byte(`{"kind":"event","edges":[{"type":"closes","target":"note:tre-5c4a"}],"field":"status","value":"closed","body":"Fixed in commit abc123."}`)
+	raw := []byte(`{"kind":"event","edges":[{"type":"closes","target":{"kind":"note","ref":"tre-5c4a"}}],"field":"status","value":"closed","body":"Fixed in commit abc123."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestParse_EventNote(t *testing.T) {
 }
 
 func TestParse_CommentNote(t *testing.T) {
-	raw := []byte(`{"kind":"comment","edges":[{"type":"on","target":"note:tre-5c4a"}],"body":"Found root cause in refresh_token().\nThe mutex was missing."}`)
+	raw := []byte(`{"kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"tre-5c4a"}}],"body":"Found root cause in refresh_token().\nThe mutex was missing."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestParse_CommentNote(t *testing.T) {
 }
 
 func TestParse_ReviewWithLocation(t *testing.T) {
-	raw := []byte(`{"id":"rev-1234","kind":"review","edges":[{"type":"targets","target":"path:src/auth.ts"}],"location":{"path":"src/auth.ts","range":{"startLine":42,"endLine":58}},"resolved":false,"body":"Race condition here. AC: add mutex."}`)
+	raw := []byte(`{"id":"rev-1234","kind":"review","edges":[{"type":"targets","target":{"kind":"path","ref":"src/auth.ts"}}],"location":{"path":"src/auth.ts","range":{"startLine":42,"endLine":58}},"resolved":false,"body":"Race condition here. AC: add mutex."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -102,7 +102,7 @@ func TestParse_ReviewWithLocation(t *testing.T) {
 }
 
 func TestParse_ThreadedComment(t *testing.T) {
-	raw := []byte(`{"kind":"comment","parent":"comment-abc","edges":[{"type":"on","target":"note:tre-5c4a"}],"body":"I agree, the mutex approach is correct."}`)
+	raw := []byte(`{"kind":"comment","parent":"comment-abc","edges":[{"type":"on","target":{"kind":"note","ref":"tre-5c4a"}}],"body":"I agree, the mutex approach is correct."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -144,7 +144,7 @@ func TestRoundTrip(t *testing.T) {
 		Assignee: "Alice",
 		Tags:     []string{"auth", "backend"},
 		Edges: []Edge{
-			{Type: "targets", Target: "path:src/auth.ts"},
+			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
 		Body: "The token refresh has a race condition.",
 	}
@@ -185,7 +185,7 @@ func TestRoundTrip_Event(t *testing.T) {
 		Field: "status",
 		Value: "in_progress",
 		Edges: []Edge{
-			{Type: "starts", Target: "note:tre-5c4a"},
+			{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}},
 		},
 	}
 
@@ -208,7 +208,7 @@ func TestRoundTrip_Event(t *testing.T) {
 
 func TestParseMulti(t *testing.T) {
 	line1, _ := json.Marshal(&Note{ID: "note-1", Kind: "ticket", Body: "First"})
-	line2, _ := json.Marshal(&Note{Kind: "event", Edges: []Edge{{Type: "closes", Target: "note:note-1"}}})
+	line2, _ := json.Marshal(&Note{Kind: "event", Edges: []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "note-1"}}}})
 	raw := append(line1, '\n')
 	raw = append(raw, line2...)
 
@@ -252,22 +252,4 @@ func TestParseMulti_EmptyLines(t *testing.T) {
 	}
 }
 
-func TestParseEdgeTarget(t *testing.T) {
-	tests := []struct {
-		input    string
-		wantKind string
-		wantRef  string
-	}{
-		{"path:src/auth.ts", "path", "src/auth.ts"},
-		{"note:tre-5c4a", "note", "tre-5c4a"},
-		{"commit:abc123def456", "commit", "abc123def456"},
-		{"blob:fedcba", "blob", "fedcba"},
-		{"change:jj-id", "change", "jj-id"},
-	}
-	for _, tt := range tests {
-		kind, ref := ParseEdgeTarget(tt.input)
-		if kind != tt.wantKind || ref != tt.wantRef {
-			t.Errorf("ParseEdgeTarget(%q) = %q, %q; want %q, %q", tt.input, kind, ref, tt.wantKind, tt.wantRef)
-		}
-	}
-}
+

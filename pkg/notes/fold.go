@@ -37,18 +37,17 @@ func FoldEvents(creation *Note, events []*Note) *State {
 
 	// Extract targets, deps, links from creation note edges
 	for _, e := range creation.Edges {
-		kind, ref := ParseEdgeTarget(e.Target)
 		switch e.Type {
 		case "targets":
-			if kind == "path" {
-				state.Targets = append(state.Targets, ref)
+			if e.Target.Kind == "path" {
+				state.Targets = append(state.Targets, e.Target.Ref)
 			}
 		case "depends-on":
-			state.Deps = append(state.Deps, ref)
+			state.Deps = append(state.Deps, e.Target.Ref)
 		case "links":
-			state.Links = append(state.Links, ref)
+			state.Links = append(state.Links, e.Target.Ref)
 		case "part-of":
-			state.ParentID = ref
+			state.ParentID = e.Target.Ref
 		}
 	}
 

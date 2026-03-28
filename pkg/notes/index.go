@@ -275,9 +275,8 @@ func noteTargetID(note *Note) string {
 	for _, e := range note.Edges {
 		switch e.Type {
 		case "closes", "reopens", "starts", "updates", "on":
-			kind, ref := ParseEdgeTarget(e.Target)
-			if kind == "note" {
-				return ref
+			if e.Target.Kind == "note" {
+				return e.Target.Ref
 			}
 		}
 	}

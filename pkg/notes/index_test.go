@@ -14,8 +14,8 @@ func buildTestIndex() *Index {
 		Type: "task",
 		Tags: []string{"auth", "backend"},
 		Edges: []Edge{
-			{Type: "targets", Target: "path:src/auth.ts"},
-			{Type: "depends-on", Target: "note:wrn-a4f2"},
+			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
+			{Type: "depends-on", Target: EdgeTarget{Kind: "note", Ref: "wrn-a4f2"}},
 		},
 		Body:      "# Fix auth race condition",
 		Time: ts("2026-03-01T10:00:00Z"),
@@ -23,14 +23,14 @@ func buildTestIndex() *Index {
 	// Start event
 	idx.Ingest(&Note{
 		Kind:      "event",
-		Edges:     []Edge{{Type: "starts", Target: "note:tre-5c4a"}},
+		Edges:     []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 		Time: ts("2026-03-01T11:00:00Z"),
 	})
 	// Comment
 	idx.Ingest(&Note{
 		Kind:      "comment",
 		Body:      "Found root cause",
-		Edges:     []Edge{{Type: "on", Target: "note:tre-5c4a"}},
+		Edges:     []Edge{{Type: "on", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
 		Time: ts("2026-03-01T12:00:00Z"),
 	})
 
@@ -39,7 +39,7 @@ func buildTestIndex() *Index {
 		ID:   "wrn-a4f2",
 		Kind: "warning",
 		Edges: []Edge{
-			{Type: "targets", Target: "path:src/auth.ts"},
+			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
 		Body:      "Race condition in token refresh",
 		Time: ts("2026-03-01T09:00:00Z"),
@@ -52,7 +52,7 @@ func buildTestIndex() *Index {
 		Status: "closed",
 		Tags:   []string{"review"},
 		Edges: []Edge{
-			{Type: "targets", Target: "path:src/auth.ts"},
+			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
 		Body:      "Add mutex to refresh",
 		Time: ts("2026-03-02T10:00:00Z"),

@@ -55,18 +55,14 @@ type Note struct {
 
 // Edge is a typed link to another git object or note.
 type Edge struct {
-	Type   string `json:"type"`   // "targets", "closes", "on", "depends-on", etc.
-	Target string `json:"target"` // "path:src/auth.ts", "note:tre-5c4a", "commit:abc123", etc.
+	Type   string     `json:"type"`   // "targets", "closes", "on", "depends-on", etc.
+	Target EdgeTarget `json:"target"` // what the edge points at
 }
 
-// ParseEdgeTarget splits an edge target string like "path:src/auth.ts" into kind and ref.
-func ParseEdgeTarget(target string) (kind, ref string) {
-	for i, c := range target {
-		if c == ':' {
-			return target[:i], target[i+1:]
-		}
-	}
-	return "", target
+// EdgeTarget identifies what an edge points at.
+type EdgeTarget struct {
+	Kind string `json:"kind"` // "path", "note", "commit", "blob", "tree", "change"
+	Ref  string `json:"ref"`  // the OID, file path, or note ID
 }
 
 // Location represents where a comment applies within a file.
