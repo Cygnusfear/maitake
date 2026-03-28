@@ -118,15 +118,9 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 		}
 	}
 
-	// 4. Disk → notes: import NEW files only (no mai-id, not tracked by git).
-	// Existing docs that predate maitake are left alone — import explicitly
-	// with: mai docs import
+	// 4. Disk → notes: import files without mai-id as doc notes.
+	// Preserves the original file path as the target edge.
 	for _, df := range newFiles {
-		// Skip files already tracked by git (pre-maitake docs)
-		if isGitTracked(repoPath, df.Path) {
-			continue
-		}
-
 		title := titleFromPath(df.Path)
 		note, err := engine.Create(CreateOptions{
 			Kind:    "doc",
