@@ -2,412 +2,613 @@
 
 ## Overview
 
-Hongos is a git-native notes engine with ticket and code review semantics. One Go binary. Storage is `refs/notes/*`. No shadow branches, no working-tree files, no external services.
+Hongos is a git-native notes engine with ticket, review, and documentation semantics. One Go binary. Storage is `refs/notes/*`. No shadow branches, no working-tree files, no external services.
+
+Everything is a note. Every note has an ID. Every change is an event pointing at a note. Nothing is ever mutated or deleted.
 
 Design references:
-- [openprose/mycelium](https://github.com/openprose/mycelium) — note format, composting, slots, branch-scope, jj support
+- [openprose/mycelium](https://github.com/openprose/mycelium) — git notes substrate, edge graph, branch-scoped notes, jj support
 - [google/git-appraise](https://github.com/google/git-appraise) — code review on git notes
 - Current `tk` (github.com/kardianos/ticket) — ticket commands, ID generation, listing/filtering
 
-## 1. Storage Model
+## 1. Core Model
 
-### 1.1 Everything is a git note
+### 1.1 Everything is a note with an ID
 
-A note is structured text attached to a git object (commit, blob, tree) via `refs/notes/*`.
-
-```
-refs/notes/hongos          ← default notes ref
-refs/notes/hongos-<slot>   ← per-slot refs (parallel writes)
-refs/notes/hongos-<branch> ← branch-scoped refs
-```
-
-### 1.2 Note format
+Every entity in hongos — ticket, warning, review finding, constraint, doc note, observation — is a **creation note** with a human-readable ID.
 
 ```
-kind <string>              ← required, first line
-title <string>             ← optional
-status <string>            ← optional (tickets)
-edge <type> <target>       ← zero or more
-supersedes <oid>           ← optional (points at previous version)
-<header> <value>           ← extensible headers
+id wrn-a4f2
+kind warning
+edge targets path:src/auth.ts
 
-<blank line>
-<free-form body>           ← markdown encouraged
+Race condition in token refresh. Two concurrent requests can both
+see an expired token and both trigger refresh.
 ```
 
-Headers are `key value` pairs, one per line, before the first blank line. Body is everything after.
+This is a warning. It has an ID (`wrn-a4f2`). It targets a file. It can be referenced, closed, commented on, linked to, queried — exactly like a ticket.
 
-### 1.3 Edge targets
+### 1.2 Everything changes via events
 
-```
-commit:<oid>     ← a commit
-blob:<oid>       ← a file at a specific version
-tree:<oid>       ← a directory at a specific version
-path:<filepath>  ← a file regardless of version
-note:<oid>       ← another note's blob OID
-change:<id>      ← jj change ID (stable across rewrites)
-```
-
-### 1.4 Kinds
-
-Open vocabulary. No schema, no enum. These are defaults:
-
-| Kind | Purpose |
-|---|---|
-| `note` | General annotation |
-| `decision` | Why something was chosen |
-| `context` | Background needed before touching this code |
-| `summary` | What a file/module does |
-| `warning` | Fragile areas, footguns |
-| `constraint` | Hard rules |
-| `observation` | Noticed but not acted on |
-| `ticket` | Work item (immutable creation record) |
-| `ticket-event` | Status/field change on a ticket |
-| `ticket-comment` | Timestamped comment on a ticket |
-| `review-request` | Opens a review |
-| `review` | File-level review finding |
-| `review-verdict` | Approve/request-changes |
-
-## 2. Notes Engine (`pkg/notes`)
-
-The core. Knows about note format, edges, kinds, composting, slots. Does NOT know about tickets or reviews.
-
-### 2.1 Operations
-
-| Operation | Description |
-|---|---|
-| `Write(target, note)` | Attach a note to a git object. Goes through guard. Auto-adds `targets-path` edge for file targets. |
-| `Read(target)` | Read the note on an object. Returns parsed headers + body. |
-| `ReadSlot(target, slot)` | Read from a specific slot. |
-| `Follow(target)` | Read + resolve all edges recursively. |
-| `Context(path)` | Aggregate: current note + stale notes + parent dir notes + commit notes. Across all slots. |
-| `Find(kind)` | All notes of a given kind. |
-| `Refs(target)` | All notes with edges pointing at target (reverse lookup). |
-| `List()` | All annotated objects. |
-| `Kinds()` | All kinds in use. |
-| `Edges(edgeType)` | All edges of a given type. |
-
-### 2.2 Composting
-
-Notes go stale when the file they describe changes (blob OID differs from current).
-
-| State | Meaning |
-|---|---|
-| Current | Note's target blob matches the file's current blob |
-| Stale | Target blob differs from current — note is about an older version |
-| Composted | Explicitly marked as absorbed/obsolete |
-
-Operations:
-- `Compost(target)` — mark stale notes as composted
-- `Renew(target)` — reattach stale note to current blob
-- `Report()` — count stale/composted across repo
-
-`Context()` shows stale notes as one-line summaries. Composted notes are hidden unless `--all`.
-
-### 2.3 Slots
-
-Parallel write lanes. Each slot is a separate notes ref.
+No note is ever rewritten. Changes are new notes pointing at the original.
 
 ```
-refs/notes/hongos            ← default slot
-refs/notes/hongos-agent-a    ← slot "agent-a"
-refs/notes/hongos-agent-b    ← slot "agent-b"
+id wrn-a4f2
+kind warning
+edge targets path:src/auth.ts
+
+Race condition in token refresh.
 ```
 
-Rules:
-- `Read` uses default slot unless slot specified
-- `Context`, `Find`, `Kinds` aggregate across all slots
-- Supersedes is intra-slot only
-- Reserved slot names: `main`, `default`
-
-### 2.4 Branch-scoped notes
-
-Feature work gets its own notes namespace:
-
 ```
-refs/notes/hongos                    ← main scope
-refs/notes/hongos-branch-<name>      ← branch scope
+kind event
+edge closes note:wrn-a4f2
+
+Fixed in commit abc123. Mutex added around refresh.
 ```
 
-- `BranchUse(name)` — switch active scope
-- `BranchMerge(name)` — merge branch notes into main scope
-
-### 2.5 jj support
-
-When `.jj/` is detected:
-- Notes on commits auto-add `edge targets-change change:<jj-change-id>`
-- `Read` falls back to change_id lookup when commit OID is gone
-- `Migrate()` bulk-reattaches notes after jj rewrites
-
-## 3. Ticket Layer (`pkg/ticket`)
-
-Built on `pkg/notes`. Tickets are event-sourced.
-
-### 3.1 Ticket = creation note + event stream
-
 ```
-Creation note:
-  kind ticket
-  id tre-5c4a
-  type task
-  priority 1
-  assignee Alexander Mangel
-  tags auth,backend
-  edge targets-path path:src/auth.ts
+kind comment
+edge on note:wrn-a4f2
 
-  # Fix auth race condition
-  Description body.
-
-Event notes (each is a separate note):
-  kind ticket-event
-  edge updates note:<creation-note-oid>
-  field status
-  value in_progress
-  author Alexander Mangel
-  timestamp 2026-03-27T20:00:00Z
-
-Comment notes:
-  kind ticket-comment
-  edge updates note:<creation-note-oid>
-  author Alexander Mangel
-  timestamp 2026-03-27T20:15:00Z
-
-  Found root cause in refresh_token().
+This was caused by the 2024 migration to async refresh.
 ```
 
-### 3.2 Folding
+The warning is now closed. Its current state = fold(creation + events + comments). The creation note is untouched. The close event says why. The comment adds context.
 
-Current ticket state = fold(creation + events):
+### 1.3 Current state = fold(creation + events)
+
+For any note ID, the current state is computed by reading the creation note and all events/comments that reference it, ordered by timestamp.
 
 ```go
-type TicketState struct {
-    ID          string
-    Title       string
-    Type        string     // task, bug, feature, epic, chore, artifact
-    Status      string     // open, in_progress, closed
-    Priority    int
-    Assignee    string
-    Tags        []string
-    Deps        []string   // note OIDs
-    Links       []string   // note OIDs
-    CreatedAt   time.Time
-    UpdatedAt   time.Time  // timestamp of last event
-    Comments    []Comment
-    Events      []Event    // full history
-    NoteOID     string     // creation note OID
-    Edges       []Edge     // all edges from creation + events
+type State struct {
+    ID        string
+    Kind      string
+    Status    string     // open, in_progress, closed — computed from events
+    Title     string     // from body (first # heading) or title header
+    Body      string
+    Tags      []string   // from creation + tag events
+    Priority  int
+    Assignee  string
+    Type      string     // task, bug, feature, epic, chore, artifact
+    Targets   []string   // file paths, commits, etc.
+    Deps      []string   // IDs this depends on
+    Links     []string   // IDs linked to this
+    Events    []Event
+    Comments  []Comment
+    CreatedAt time.Time
+    UpdatedAt time.Time  // timestamp of last event
+    NoteOID   OID        // creation note's blob OID
 }
 ```
 
 Fold rules:
-- `field status value X` → status = X
-- `field tags value +foo` → append tag
-- `field tags value -foo` → remove tag
-- `field priority value N` → priority = N
-- `field assignee value X` → assignee = X
-- `field deps value +<oid>` → add dependency
-- `field deps value -<oid>` → remove dependency
-- Comments are ordered by timestamp
+- `edge closes` → status = closed
+- `edge reopens` → status = open
+- `edge starts` → status = in_progress
+- `field tags +foo` → append tag
+- `field tags -foo` → remove tag
+- `field priority N` → priority = N
+- `field assignee X` → assignee = X
+- `field deps +<id>` → add dependency
+- `field deps -<id>` → remove dependency
+- Scalars: last-writer-wins by timestamp
+- Collections: set operations applied in order
+- Comments: ordered by timestamp
 
-### 3.3 Ticket types
+### 1.4 CRDT for free
 
-| Type | Default status | Use |
-|---|---|---|
-| `task` | `open` | General work |
-| `bug` | `open` | Bug fix |
-| `feature` | `open` | New feature |
-| `epic` | `open` | Parent/umbrella |
-| `chore` | `open` | Maintenance |
-| `artifact` | `closed` | Non-work output (review, research, ADR, doc) |
-
-### 3.4 Commands
-
-| Command | Description |
-|---|---|
-| `hongos create [title] [options]` | Create ticket (creation note + optional start event) |
-| `hongos start <id>` | Emit status→in_progress event |
-| `hongos close <id>` | Emit status→closed event |
-| `hongos reopen <id>` | Emit status→open event |
-| `hongos show <id>` | Fold and display current state |
-| `hongos ls [--status=X] [-T tag]` | List tickets (fold all, filter, sort) |
-| `hongos ready` | Open tickets with all deps resolved |
-| `hongos blocked` | Open tickets with unresolved deps |
-| `hongos add-note <id> [text]` | Emit ticket-comment |
-| `hongos dep <id> <dep-id>` | Emit deps event |
-| `hongos link <id> <id>` | Emit link events on both |
-| `hongos edit <id>` | Open in $EDITOR (rewrite creation note with supersedes) |
-
-### 3.5 ID generation and resolution
-
-Same scheme as current tk:
-- ID = directory-prefix + 4-char random alphanumeric
-- Stored in creation note header: `id tre-5c4a`
-- Partial match: scan creation notes, match substring
-- Index: maintain an in-memory ID→OID map, cached per-session
-
-### 3.6 Performance: note index
-
-For repos with thousands of tickets, scanning all notes on every command is too slow.
-
-Build a local index file (gitignored):
+Two agents write events on the same note:
 
 ```
-.hongos/index.json
-{
-  "version": 1,
-  "ref": "refs/notes/hongos",
-  "ref_oid": "<tip-of-notes-ref>",
-  "tickets": {
-    "tre-5c4a": { "oid": "<creation-note-oid>", "status": "open", "type": "task", "priority": 1, "title": "Fix auth race condition" },
-    ...
-  }
+Agent A: kind event, edge starts note:tre-5c4a, timestamp T1
+Agent B: kind event, field tags +critical on note:tre-5c4a, timestamp T2
+```
+
+Both are separate immutable blobs. No conflict. When syncing between machines, merge is set-union on note blobs. Fold produces the same state regardless of order because:
+- Scalars use last-writer-wins by timestamp
+- Collections use set operations applied in timestamp order
+
+### 1.5 ID generation
+
+Same scheme as current tk:
+- Prefix = first letter of each segment of the directory name
+- Suffix = 4 random alphanumeric chars
+- Examples: `tre-5c4a`, `wrn-a4f2`, `rev-b3d1`
+
+IDs are stored in the creation note's `id` header. Partial matching works everywhere (e.g., `hongos show 5c4` matches `tre-5c4a`).
+
+Kind-based prefixes are a convention, not enforced:
+- Tickets: directory prefix (`tre-`, `tic-`)
+- Warnings/reviews/etc: same generation, different usage
+
+## 2. Note Format
+
+```
+id <human-readable-id>
+kind <string>
+title <string>
+type <string>
+status <string>
+priority <int>
+assignee <string>
+tags <comma-separated>
+edge <type> <target-kind>:<ref>
+supersedes <oid>
+<key> <value>
+
+<blank line>
+<free-form body, markdown>
+```
+
+### 2.1 Headers
+
+- First line MUST be `id` for creation notes, `kind` for events/comments
+- Headers are `key value` pairs, one per line, before the first blank line
+- Unknown headers are preserved (extensible)
+- Parse errors are hard errors
+
+### 2.2 Edge targets
+
+```
+commit:<oid>       ← a specific commit
+blob:<oid>         ← a file at a specific version
+tree:<oid>         ← a directory at a specific version
+path:<filepath>    ← a file regardless of version
+note:<id>          ← another note (by human ID)
+change:<jj-id>     ← jj change ID (stable across rewrites)
+```
+
+### 2.3 Edge types
+
+Open vocabulary. Common types:
+
+| Edge type | Meaning |
+|---|---|
+| `targets` | this note is about that object |
+| `closes` | this event closes that note |
+| `reopens` | this event reopens that note |
+| `starts` | this event starts that note (in_progress) |
+| `updates` | this event modifies a field on that note |
+| `on` | this comment is on that note |
+| `depends-on` | this note depends on that note |
+| `blocks` | this note blocks that note |
+| `links` | symmetric link |
+| `part-of` | this note is part of that note (child→parent) |
+| `references` | cross-reference |
+
+### 2.4 Kinds
+
+Open vocabulary. Defaults:
+
+| Kind | What it is |
+|---|---|
+| `ticket` | work item, issue, task |
+| `warning` | fragile area, footgun |
+| `constraint` | hard rule |
+| `context` | background for working on code |
+| `summary` | what a file/module does |
+| `decision` | why something was chosen (ADR) |
+| `observation` | noticed but not acted on |
+| `review-request` | opens a code review |
+| `review` | file-level review finding |
+| `review-verdict` | approve / changes-requested |
+| `doc` | documentation |
+| `event` | state change on another note |
+| `comment` | comment on another note |
+
+## 3. Notes Engine (`pkg/notes`)
+
+### 3.1 Engine interface
+
+```go
+type Engine interface {
+    // Create writes a new note with a generated ID.
+    Create(opts CreateOptions) (*Note, error)
+
+    // Append writes an event or comment on an existing note.
+    Append(opts AppendOptions) (*Note, error)
+
+    // Get returns a note by ID (creation note only, not folded).
+    Get(id string) (*Note, error)
+
+    // Fold returns the computed current state of a note (creation + all events).
+    Fold(id string) (*State, error)
+
+    // Context returns all open notes targeting a file path.
+    Context(path string) ([]State, error)
+
+    // ContextAll returns all notes targeting a file path (open + closed).
+    ContextAll(path string) ([]State, error)
+
+    // Find returns all notes matching filters.
+    Find(opts FindOptions) ([]State, error)
+
+    // List returns all note IDs with summary state.
+    List(opts ListOptions) ([]StateSummary, error)
+
+    // Refs returns all notes with edges pointing at a target (reverse lookup).
+    Refs(target string) ([]State, error)
+
+    // Kinds returns all kinds in use.
+    Kinds() ([]KindCount, error)
+
+    // BranchUse switches the active notes scope.
+    BranchUse(name string) error
+
+    // BranchMerge merges a branch scope into the main scope.
+    BranchMerge(name string) error
+
+    // Doctor reports graph health.
+    Doctor() (*DoctorReport, error)
+
+    // Rebuild forces a full index rebuild.
+    Rebuild() error
 }
 ```
 
-Invalidate when notes ref OID changes. Rebuild is: scan all notes, fold events, write index. Should be <1s for 10,000 notes.
+### 3.2 Create and Append
 
-## 4. Review Layer (`pkg/review`)
+```go
+type CreateOptions struct {
+    Kind     string   // required
+    Title    string   // optional (can also be first # heading in body)
+    Type     string   // optional (ticket type: task, bug, artifact, etc.)
+    Priority int      // optional
+    Assignee string   // optional
+    Tags     []string // optional
+    Body     string   // required
+    Edges    []Edge   // optional (auto-edges added for file targets)
+    Slot     string   // optional parallel write lane
+}
 
-Built on `pkg/notes`. Reviews are note graphs.
-
-### 4.1 Review workflow
-
-```
-1. Author opens review:
-   kind review-request
-   edge compares commit:<head>
-   edge base commit:<merge-base>
-   edge targets-path path:src/auth.ts
-   edge targets-path path:src/http.ts
-
-   Auth hardening — race condition fix + retry logic
-
-2. Reviewer leaves file-level findings:
-   kind review
-   edge part-of note:<review-request-oid>
-   edge targets-path path:src/auth.ts
-   status changes-requested
-
-   Race condition in token refresh.
-   AC: concurrent refresh requests must not corrupt token state.
-
-3. Reviewer leaves verdict:
-   kind review-verdict
-   edge part-of note:<review-request-oid>
-   status changes-requested
-
-   Two file-level findings. Fix both before merge.
-
-4. Implementer sees findings on files:
-   hongos context src/auth.ts
-   → [review] Race condition in token refresh. AC: ...
-
-5. After fixing, implementer or reviewer composts the finding:
-   hongos compost src/auth.ts
+type AppendOptions struct {
+    TargetID string   // the note ID this event/comment applies to
+    Kind     string   // "event", "comment", or specific kinds
+    Body     string   // optional (required for comments)
+    Field    string   // for events: which field changed
+    Value    string   // for events: new value ("+tag", "-tag", "closed", etc.)
+    Edges    []Edge   // auto-generated from TargetID, can add more
+    Slot     string   // optional
+}
 ```
 
-### 4.2 Review commands
+### 3.3 Query
 
-| Command | Description |
-|---|---|
-| `hongos review request [--base commit] [--head commit] [paths...]` | Open a review |
-| `hongos review find <path>` | File-level finding with acceptance criteria |
-| `hongos review verdict <review-id> [approve\|changes-requested]` | Overall verdict |
-| `hongos review ls` | List open reviews |
-| `hongos review show <id>` | Show review + all findings |
+```go
+type FindOptions struct {
+    Kind     string   // filter by kind
+    Status   string   // filter by computed status (open, in_progress, closed)
+    Tag      string   // filter by tag
+    Type     string   // filter by type (task, bug, artifact, etc.)
+    Target   string   // filter by target path or OID
+    Assignee string   // filter by assignee
+}
 
-## 5. Guard Layer (`pkg/guard`)
+type ListOptions struct {
+    Status   string
+    Tag      string
+    Type     string
+    Assignee string
+    Limit    int
+    SortBy   string   // "priority", "created", "updated"
+}
 
-Every write goes through guard before hitting git.
-
-### 5.1 Checks
-
-| Check | How |
-|---|---|
-| Secret detection | Shell out to `gitleaks detect --pipe` if available |
-| PII patterns | Built-in regex: emails, phone numbers, SSNs, API key patterns |
-| Note format validation | Headers parseable, kind present, edges well-formed |
-| Size limit | Reject notes over configurable max (default: 64KB) |
-
-### 5.2 Behavior
-
-- If gitleaks is installed: use it (most thorough)
-- If not: fall back to built-in patterns (good enough for common cases)
-- Guard failures are hard errors — the write does not happen
-- `--skip-guard` flag for emergencies (logged as a warning note on the repo)
-
-## 6. Sync Layer (`pkg/sync`)
-
-### 6.1 Privacy model
-
-- Notes refs do NOT push/fetch by default (git's built-in behavior)
-- `hongos sync-init <remote>` adds refspecs for a specific remote
-- `hongos sync-init --remove <remote>` removes refspecs
-- No accidental leaks to GitHub
-
-### 6.2 Merge strategy
-
-When the remote notes ref has diverged:
-
-Notes are immutable blobs. "Merging" is set-union on the blob set:
-- Both sides added different notes → keep both
-- Same note on both sides → deduplicate by OID
-- Supersession chains: preserve both, let the longer chain win
-
-No field-level CRDT needed because notes are never mutated — only superseded.
-
-## 7. CLI Surface
-
-```
-hongos note [target] -k <kind> -m <body>       Write a note
-hongos read [target]                            Read a note
-hongos follow [target]                          Read + resolve edges
-hongos context <path>                           Everything known about a file
-hongos find <kind>                              Find by kind
-hongos compost [path|oid] [--dry-run]           Triage stale notes
-
-hongos create [title] [options]                 Create ticket
-hongos start <id>                               Status → in_progress
-hongos close <id>                               Status → closed
-hongos show <id>                                Display ticket
-hongos ls [--status=X] [-T tag]                 List tickets
-hongos ready / blocked / closed                 Filtered views
-hongos add-note <id> [text]                     Comment on ticket
-hongos dep / link / undep / unlink              Relationships
-
-hongos review request [options]                 Open review
-hongos review find <path> -m <finding>          File-level finding
-hongos review verdict <id> [verdict]            Approve or request changes
-hongos review ls / show                         Review queries
-
-hongos branch use <name>                        Branch-scoped notes
-hongos branch merge <name>                      Merge branch notes
-hongos sync-init [remote]                       Configure sync
-hongos doctor                                   Health check
-hongos migrate                                  Reattach after jj rewrites
+type StateSummary struct {
+    ID        string
+    Kind      string
+    Status    string
+    Type      string
+    Priority  int
+    Title     string
+    Tags      []string
+    CreatedAt time.Time
+    UpdatedAt time.Time
+}
 ```
 
-Alias: `tk` can remain as an alias or symlink for backward compatibility with existing workflows.
+### 3.4 Slots
 
-## 8. Migration Path
-
-### 8.1 From current tk (.tickets/ shadow branch)
+Parallel write lanes for concurrent agents. Each slot is a separate notes ref.
 
 ```
+refs/notes/hongos              ← default slot
+refs/notes/hongos-slot-<name>  ← named slot
+```
+
+- `Create`/`Append` with `Slot` → writes to slot ref
+- `Context`, `Find`, `List` aggregate across all slots
+- Same note ID can exist in multiple slots (rare, but handled)
+- Fold aggregates events from all slots by timestamp
+
+### 3.5 Branch-scoped notes
+
+```
+refs/notes/hongos                     ← main scope
+refs/notes/hongos-branch-<name>       ← branch scope
+```
+
+- `BranchUse(name)` → all operations target the branch scope
+- `BranchMerge(name)` → copy notes from branch to main (set-union)
+- Scope persisted in `.hongos/scope` (gitignored)
+
+### 3.6 jj support
+
+When `.jj/` is detected:
+- Notes on commits auto-add `edge targets change:<jj-change-id>`
+- `Get`/`Fold` fall back to change_id lookup when commit OID disappears
+- `Migrate()` bulk-reattaches orphaned notes after jj rewrites
+
+### 3.7 Index
+
+Local cache for fast queries. Stored in `.hongos/index` (gitignored).
+
+```go
+type Index struct {
+    Version   int
+    RefTips   map[NotesRef]OID              // invalidation key
+    ByID      map[string]OID                // human ID → creation note OID
+    ByKind    map[string][]string           // kind → note IDs
+    ByTarget  map[string][]string           // target path/OID → note IDs
+    ByStatus  map[string][]string           // status ��� note IDs
+    States    map[string]*StateSummary      // ID → cached summary
+}
+```
+
+Invalidation: compare stored ref tips against current. If any differ, rebuild.
+Performance target: rebuild 10,000 notes in <1s. Warm query in <1ms.
+
+### 3.8 Auto-edges
+
+On every `Create`:
+- If target resolves to a file path → `edge targets path:<filepath>`
+- If target is a commit in a jj repo → `edge targets change:<jj-change-id>`
+
+On every `Append`:
+- Auto-add `edge <type> note:<target-id>` based on the append kind
+
+### 3.9 Storage: what goes where
+
+Every note (creation notes, events, comments) is a git note blob attached to a **synthetic target object**. The target object is determined by:
+
+- Creation notes: attached to the git object they target (blob, commit, tree) or to a null-target ref for standalone notes
+- Events/comments: attached to a deterministic OID derived from the target note's ID
+
+This keeps the notes ref as a flat list of git notes, each parseable independently.
+
+## 4. CLI
+
+### 4.1 Everything has an ID, everything is queryable
+
+```bash
+# Create things
+hongos create "Fix auth race condition" -k ticket -t task -p 1 --tags auth
+hongos create "Race condition in refresh" -k warning --target src/auth.ts
+hongos create "Must be retryable" -k constraint --target src/auth.ts
+
+# Change things (by ID)
+hongos start tre-5c4a
+hongos close wrn-a4f2 -m "Fixed in abc123"
+hongos add-note tre-5c4a "Found root cause in refresh_token()"
+hongos tag tre-5c4a +critical
+hongos assign tre-5c4a "Alice"
+hongos dep tre-5c4a wrn-a4f2
+hongos link tre-5c4a rev-b3d1
+
+# Read things
+hongos show tre-5c4a              # full state: creation + events + comments
+hongos show wrn-a4f2              # same — warnings are just notes with IDs
+hongos context src/auth.ts        # all open notes targeting this file
+hongos context src/auth.ts --all  # open + closed
+
+# Query things
+hongos ls                          # all open notes
+hongos ls --status=open            # explicit
+hongos ls -k ticket                # only tickets
+hongos ls -k warning               # only warnings
+hongos ls -k review                # only review findings
+hongos ls -T auth                  # by tag
+hongos ls --target src/auth.ts     # everything on a file
+hongos ready                       # open notes with all deps resolved
+hongos blocked                     # open notes with unresolved deps
+
+# Review workflow
+hongos create "Auth hardening review" -k review-request \
+  --target src/auth.ts --target src/http.ts
+hongos create "Add mutex" -k review --target src/auth.ts \
+  --part-of rev-b3d1 -m "AC: concurrent refresh safe"
+hongos create "Add backoff" -k review --target src/http.ts \
+  --part-of rev-b3d1 -m "AC: exponential with jitter"
+hongos close rev-f1a2 -m "Fixed"
+hongos verdict rev-b3d1 approve
+
+# Explore
+hongos context src/auth.ts        # what do I need to know about this file?
+hongos refs tre-5c4a              # what points at this ticket?
+hongos follow tre-5c4a            # ticket + resolve all edges
+hongos kinds                       # what kinds are in use?
+hongos doctor                      # graph health
+
+# Branch scope
+hongos branch use my-feature       # notes scoped to this branch
+hongos branch merge my-feature     # merge into main scope
+
+# Sync
+hongos sync-init forgejo           # push/pull notes to this remote
+hongos sync                        # push + pull + merge
+```
+
+### 4.2 Key principle: uniform interface
+
+There is no separate `ticket` subcommand vs `note` subcommand vs `review` subcommand. Every note is created with `hongos create`, queried with `hongos ls`, shown with `hongos show`. The `kind` is what differentiates them.
+
+```bash
+hongos create "Fix bug" -k ticket -t task          # ticket
+hongos create "Footgun here" -k warning             # warning
+hongos create "Review auth" -k review-request       # PR
+hongos create "Add mutex" -k review                 # review finding
+hongos create "Use YAML" -k decision                # ADR
+hongos create "Module overview" -k summary           # doc
+```
+
+Same command. Same flags. Same query surface. The kind is metadata, not a different subsystem.
+
+### 4.3 Shortcuts
+
+Common operations get short aliases:
+
+```bash
+# These are equivalent:
+hongos create "Fix bug" -k ticket -t task -p 1
+hongos ticket "Fix bug" -t task -p 1
+
+# These are equivalent:
+hongos create "Footgun" -k warning --target src/auth.ts
+hongos warn src/auth.ts "Footgun"
+
+# These are equivalent:
+hongos create "Add mutex" -k review --target src/auth.ts --part-of rev-b3d1
+hongos review src/auth.ts "Add mutex" --part-of rev-b3d1
+```
+
+The shortcuts are sugar over `create` with pre-filled kind and argument order. They use the same code path.
+
+### 4.4 Context is the arrival command
+
+When an agent starts working on a file:
+
+```bash
+$ hongos context src/auth.ts
+
+wrn-a4f2 [warning] (open)     Race condition in token refresh
+con-b1c3 [constraint] (open)  Must be retryable
+rev-f1a2 [review] (open)      Add mutex. AC: concurrent refresh safe
+tre-5c4a [ticket] (in_progress) Fix auth race condition
+```
+
+Everything the agent needs. Warnings, constraints, review findings, related tickets — all targeting this file, all with IDs the agent can reference and close.
+
+### 4.5 Output format
+
+Default: human-readable table (like current `tk ls`).
+
+```bash
+$ hongos ls -k ticket --status=open
+tre-5c4a [P1][open]    Fix auth race condition        auth,backend
+tre-9b2f [P2][open]    Add retry logic                http,backend
+```
+
+JSON for scripting:
+
+```bash
+$ hongos ls -k ticket --status=open --json
+[{"id":"tre-5c4a","kind":"ticket","status":"open","priority":1,...},...]
+```
+
+## 5. Review Workflow
+
+Reviews are notes. The workflow is:
+
+```
+1. Author creates review-request targeting changed files
+2. Reviewer creates review findings ON the files, linked to the request
+3. Each finding has acceptance criteria and rejection criteria in the body
+4. Implementer runs `hongos context <file>` and sees findings in-place
+5. Implementer fixes, then closes findings with a reason
+6. Reviewer creates review-verdict (approve / changes-requested)
+```
+
+### 5.1 Review finding format
+
+```
+id rev-f1a2
+kind review
+edge targets path:src/auth.ts
+edge part-of note:rev-b3d1
+status open
+tags critical
+
+## Race condition in token refresh
+
+Two concurrent requests can both see an expired token.
+
+## Acceptance Criteria
+- [ ] Mutex or single-flight around token refresh
+- [ ] Concurrent requests block on in-flight refresh
+- [ ] No request gets a revoked token
+
+## Rejection Criteria
+- Simple boolean flag instead of proper synchronization
+- Retry loop without backoff
+- Silencing the error instead of fixing the race
+```
+
+This note lives on `src/auth.ts`. When the fix agent runs `hongos context src/auth.ts`, they see it. The AC tells them what "done" looks like. The rejection criteria tells them what NOT to do.
+
+### 5.2 Verdict
+
+```
+kind event
+edge closes note:rev-b3d1
+field status approve
+
+All findings addressed. Ship it.
+```
+
+Or:
+
+```
+kind event
+edge updates note:rev-b3d1
+field status changes-requested
+
+Two findings still open. See rev-f1a2 and rev-g2b3.
+```
+
+## 6. Sync
+
+### 6.1 Privacy
+
+Notes refs don't push/fetch by default. Explicit opt-in per remote:
+
+```bash
+hongos sync-init forgejo    # adds refspecs for this remote only
+hongos sync-init --remove github  # removes refspecs
+```
+
+### 6.2 Merge
+
+Notes are immutable blobs. Merging diverged refs = set-union on blobs.
+
+Both sides added notes → keep both. Same note on both sides → deduplicate by OID. Fold produces the same state regardless of merge order because event timestamps determine precedence.
+
+## 7. Hooks
+
+See [HOOKS.md](HOOKS.md) for the full spec.
+
+```
+.hongos/hooks/
+├── pre-write       ← scan content before it enters a ref
+├── pre-push        ← last-chance scan before push
+├── post-write      ← logging, notifications
+└── post-close      ← after a note is closed
+```
+
+## 8. Migration
+
+### 8.1 From tk (.tickets/ shadow branch)
+
+```bash
 hongos migrate-legacy [--dry-run]
 ```
 
-- Reads all `.tickets/*.md` files
+- Reads `.tickets/*.md` files
 - Parses YAML frontmatter into creation notes
-- Parses `## Notes` sections into ticket-comment notes
-- Writes to `refs/notes/hongos`
-- Preserves ticket IDs, timestamps, deps, links
-- After migration: remove `.tickets/` worktree, delete shadow branch
+- Parses `## Notes` sections into comment notes
+- Status/deps/links become events
+- Preserves IDs, timestamps
+- After: remove `.tickets/` worktree, delete shadow branch
 
 ### 8.2 Backward compatibility
 
-During transition, `hongos` can check both:
-1. `refs/notes/hongos` (new)
-2. `.tickets/` directory (legacy)
-
-And present a unified view. This allows gradual migration.
+During transition, `hongos` checks both refs/notes and `.tickets/`. Unified view. Gradual migration.
