@@ -3,6 +3,7 @@ package notes
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestParse_CreationNote(t *testing.T) {
@@ -134,6 +135,97 @@ func TestParse_RejectInvalidJSON(t *testing.T) {
 	}
 }
 
+// === TIMESTAMP HYDRATION REGRESSION TESTS ===
+
+func TestParse_TimestampHydrated(t *testing.T) {
+	raw := []byte(`{"kind":"ticket","id":"t-1","timestamp":"2026-03-15T14:30:00Z"}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Time.IsZero() {
+		t.Fatal("Time should be hydrated from Timestamp, got zero")
+	}
+	want := time.Date(2026, 3, 15, 14, 30, 0, 0, time.UTC)
+	if !note.Time.Equal(want) {
+		t.Errorf("Time = %v, want %v", note.Time, want)
+	}
+}
+
+func TestParse_TimestampHydrated_Event(t *testing.T) {
+	raw := []byte(`{"kind":"event","field":"status","value":"closed","timestamp":"2026-03-20T09:15:00Z","edges":[{"type":"closes","target":{"kind":"note","ref":"t-1"}}]}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Time.IsZero() {
+		t.Fatal("Event Time should be hydrated from Timestamp, got zero")
+	}
+	want := time.Date(2026, 3, 20, 9, 15, 0, 0, time.UTC)
+	if !note.Time.Equal(want) {
+		t.Errorf("Time = %v, want %v", note.Time, want)
+	}
+}
+
+func TestParse_TimestampHydrated_Comment(t *testing.T) {
+	raw := []byte(`{"kind":"comment","body":"hello","timestamp":"2026-01-01T00:00:00Z","edges":[{"type":"on","target":{"kind":"note","ref":"t-1"}}]}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Time.IsZero() {
+		t.Fatal("Comment Time should be hydrated from Timestamp, got zero")
+	}
+}
+
+func TestParse_NoTimestamp_TimeStaysZero(t *testing.T) {
+	raw := []byte(`{"kind":"ticket","id":"t-old"}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !note.Time.IsZero() {
+		t.Errorf("Time should be zero when no timestamp, got %v", note.Time)
+	}
+}
+
+func TestParse_InvalidTimestamp_TimeStaysZero(t *testing.T) {
+	raw := []byte(`{"kind":"ticket","id":"t-bad","timestamp":"not-a-date"}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !note.Time.IsZero() {
+		t.Errorf("Time should be zero for unparseable timestamp, got %v", note.Time)
+	}
+}
+
+// === BRANCH FIELD REGRESSION TESTS ===
+
+func TestParse_BranchPreserved(t *testing.T) {
+	raw := []byte(`{"kind":"ticket","id":"t-br","branch":"feature/auth","timestamp":"2026-03-15T14:30:00Z"}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Branch != "feature/auth" {
+		t.Errorf("Branch = %q, want feature/auth", note.Branch)
+	}
+}
+
+func TestParse_NoBranch_EmptyString(t *testing.T) {
+	raw := []byte(`{"kind":"ticket","id":"t-nobr"}`)
+	note, err := Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.Branch != "" {
+		t.Errorf("Branch = %q, want empty", note.Branch)
+	}
+}
+
+// === ROUNDTRIP TESTS ===
+
 func TestRoundTrip(t *testing.T) {
 	original := &Note{
 		ID:       "tre-5c4a",
@@ -146,7 +238,9 @@ func TestRoundTrip(t *testing.T) {
 		Edges: []Edge{
 			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
-		Body: "The token refresh has a race condition.",
+		Body:      "The token refresh has a race condition.",
+		Timestamp: "2026-03-15T14:30:00Z",
+		Branch:    "feature/auth",
 	}
 
 	serialized, err := Serialize(original)
@@ -177,13 +271,27 @@ func TestRoundTrip(t *testing.T) {
 	if len(parsed.Edges) != len(original.Edges) {
 		t.Errorf("Edges: %d != %d", len(parsed.Edges), len(original.Edges))
 	}
+	// Timestamp round-trips
+	if parsed.Timestamp != original.Timestamp {
+		t.Errorf("Timestamp: %q != %q", parsed.Timestamp, original.Timestamp)
+	}
+	// Time hydrated from Timestamp
+	if parsed.Time.IsZero() {
+		t.Error("Time should be hydrated after round-trip")
+	}
+	// Branch round-trips
+	if parsed.Branch != original.Branch {
+		t.Errorf("Branch: %q != %q", parsed.Branch, original.Branch)
+	}
 }
 
 func TestRoundTrip_Event(t *testing.T) {
 	original := &Note{
-		Kind:  "event",
-		Field: "status",
-		Value: "in_progress",
+		Kind:      "event",
+		Field:     "status",
+		Value:     "in_progress",
+		Timestamp: "2026-03-15T15:00:00Z",
+		Branch:    "main",
 		Edges: []Edge{
 			{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}},
 		},
@@ -203,6 +311,12 @@ func TestRoundTrip_Event(t *testing.T) {
 	}
 	if parsed.Field != "status" {
 		t.Errorf("Field = %q", parsed.Field)
+	}
+	if parsed.Time.IsZero() {
+		t.Error("Event Time should be hydrated after round-trip")
+	}
+	if parsed.Branch != "main" {
+		t.Errorf("Branch = %q, want main", parsed.Branch)
 	}
 }
 
@@ -224,6 +338,24 @@ func TestParseMulti(t *testing.T) {
 	}
 	if notes[1].Kind != "event" {
 		t.Errorf("note 1 Kind = %q", notes[1].Kind)
+	}
+}
+
+func TestParseMulti_TimestampsHydrated(t *testing.T) {
+	line1, _ := json.Marshal(&Note{ID: "t-1", Kind: "ticket", Timestamp: "2026-03-10T10:00:00Z"})
+	line2, _ := json.Marshal(&Note{Kind: "event", Timestamp: "2026-03-10T11:00:00Z", Edges: []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "t-1"}}}})
+	raw := append(line1, '\n')
+	raw = append(raw, line2...)
+
+	notes, err := ParseMulti(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notes[0].Time.IsZero() {
+		t.Error("note 0 Time should be hydrated")
+	}
+	if notes[1].Time.IsZero() {
+		t.Error("note 1 Time should be hydrated")
 	}
 }
 
@@ -251,5 +383,3 @@ func TestParseMulti_EmptyLines(t *testing.T) {
 		t.Fatalf("got %d, want 1", len(notes))
 	}
 }
-
-

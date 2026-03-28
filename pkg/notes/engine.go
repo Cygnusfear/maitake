@@ -80,6 +80,11 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		}
 	}
 
+	now := time.Now().UTC()
+	if !opts.Timestamp.IsZero() {
+		now = opts.Timestamp.UTC()
+	}
+
 	note := &Note{
 		ID:        id,
 		Kind:      opts.Kind,
@@ -90,8 +95,8 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		Tags:      opts.Tags,
 		Body:      opts.Body,
 		Edges:     opts.Edges,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Time:      time.Now().UTC(),
+		Timestamp: now.Format(time.RFC3339),
+		Time:      now,
 		Branch:    e.currentGitBranch(),
 	}
 
@@ -163,6 +168,11 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		return nil, fmt.Errorf("note %q not found", opts.TargetID)
 	}
 
+	appendNow := time.Now().UTC()
+	if !opts.Timestamp.IsZero() {
+		appendNow = opts.Timestamp.UTC()
+	}
+
 	note := &Note{
 		Kind:      opts.Kind,
 		Body:      opts.Body,
@@ -172,8 +182,8 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		Location:  opts.Location,
 		Parent:    opts.Parent,
 		Resolved:  opts.Resolved,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Time:      time.Now().UTC(),
+		Timestamp: appendNow.Format(time.RFC3339),
+		Time:      appendNow,
 		Branch:    e.currentGitBranch(),
 	}
 

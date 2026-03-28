@@ -627,6 +627,136 @@ func TestCLI_FileLocatedComment_TicketWithoutTarget(t *testing.T) {
 	}
 }
 
+// === JSON OUTPUT ===
+
+func TestCLI_JSON_Ls(t *testing.T) {
+	dir := setupTestRepo(t)
+	id := mai(t, dir, "ticket", "JSON test", "-p", "1", "--tags", "test")
+
+	out := mai(t, dir, "--json", "ls")
+	if !strings.Contains(out, `"id"`) {
+		t.Errorf("--json ls should output JSON:\n%s", out)
+	}
+	if !strings.Contains(out, id) {
+		t.Errorf("--json ls should contain ticket ID:\n%s", out)
+	}
+	if !strings.Contains(out, `"createdAt"`) {
+		t.Errorf("--json ls should have createdAt field:\n%s", out)
+	}
+}
+
+func TestCLI_JSON_Ls_TimestampsNotZero(t *testing.T) {
+	dir := setupTestRepo(t)
+	mai(t, dir, "ticket", "Timestamp check")
+
+	out := mai(t, dir, "--json", "ls")
+	if strings.Contains(out, "0001-01-01") {
+		t.Errorf("--json ls has zero timestamps — Time not hydrated:\n%s", out)
+	}
+}
+
+func TestCLI_JSON_Show(t *testing.T) {
+	dir := setupTestRepo(t)
+	id := mai(t, dir, "ticket", "Show JSON", "-d", "Body text")
+	mai(t, dir, "start", id)
+	mai(t, dir, "add-note", id, "A comment")
+
+	out := mai(t, dir, "--json", "show", id)
+	if !strings.Contains(out, `"status"`) {
+		t.Errorf("--json show should have status:\n%s", out)
+	}
+	if !strings.Contains(out, `"in_progress"`) {
+		t.Errorf("--json show should be in_progress:\n%s", out)
+	}
+	if !strings.Contains(out, `"A comment"`) {
+		t.Errorf("--json show should have comment:\n%s", out)
+	}
+	if strings.Contains(out, "0001-01-01") {
+		t.Errorf("--json show has zero timestamps:\n%s", out)
+	}
+}
+
+func TestCLI_JSON_Show_DepsLinks(t *testing.T) {
+	dir := setupTestRepo(t)
+	a := mai(t, dir, "ticket", "A")
+	b := mai(t, dir, "ticket", "B")
+	mai(t, dir, "dep", a, b)
+
+	out := mai(t, dir, "--json", "show", a)
+	if !strings.Contains(out, b) {
+		t.Errorf("--json show should have dep ID:\n%s", out)
+	}
+	if !strings.Contains(out, `"deps"`) {
+		t.Errorf("--json show should have deps field:\n%s", out)
+	}
+}
+
+func TestCLI_JSON_Context(t *testing.T) {
+	dir := setupTestRepo(t)
+	mai(t, dir, "ticket", "Auth fix", "--target", "src/auth.ts")
+
+	out := mai(t, dir, "--json", "context", "src/auth.ts")
+	if !strings.Contains(out, `"id"`) {
+		t.Errorf("--json context should output JSON:\n%s", out)
+	}
+	if !strings.Contains(out, "Auth fix") {
+		t.Errorf("--json context should contain ticket:\n%s", out)
+	}
+}
+
+func TestCLI_JSON_Ls_DepsLinksInSummary(t *testing.T) {
+	dir := setupTestRepo(t)
+	a := mai(t, dir, "ticket", "Parent")
+	b := mai(t, dir, "ticket", "Child")
+	c := mai(t, dir, "ticket", "Related")
+	mai(t, dir, "dep", a, b)
+	mai(t, dir, "link", a, c)
+
+	out := mai(t, dir, "--json", "ls")
+	// The summary for 'a' should contain deps and links
+	if !strings.Contains(out, `"deps"`) {
+		t.Errorf("--json ls summary should include deps:\n%s", out)
+	}
+	if !strings.Contains(out, `"links"`) {
+		t.Errorf("--json ls summary should include links:\n%s", out)
+	}
+}
+
+func TestCLI_JSON_BranchStamped(t *testing.T) {
+	dir := setupTestRepo(t)
+	mai(t, dir, "ticket", "Branch test")
+
+	out := mai(t, dir, "--json", "ls")
+	if !strings.Contains(out, `"branch"`) {
+		t.Errorf("--json ls should include branch:\n%s", out)
+	}
+}
+
+// === -C FLAG ===
+
+func TestCLI_CFlag(t *testing.T) {
+	dir := setupTestRepo(t)
+	id := mai(t, dir, "ticket", "Remote dir test")
+
+	// Query from a different directory using -C
+	other := t.TempDir()
+	out := mai(t, other, "-C", dir, "show", id)
+	if !strings.Contains(out, "Remote dir test") {
+		t.Errorf("-C flag should query the target dir:\n%s", out)
+	}
+}
+
+func TestCLI_CFlag_JSON(t *testing.T) {
+	dir := setupTestRepo(t)
+	mai(t, dir, "ticket", "C flag JSON")
+
+	other := t.TempDir()
+	out := mai(t, other, "-C", dir, "--json", "ls")
+	if !strings.Contains(out, "C flag JSON") {
+		t.Errorf("-C + --json should work:\n%s", out)
+	}
+}
+
 // === TAG REMOVAL ===
 
 func TestCLI_TagAddRemove(t *testing.T) {

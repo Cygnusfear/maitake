@@ -145,28 +145,30 @@ type DoctorReport struct {
 
 // CreateOptions controls note creation.
 type CreateOptions struct {
-	ID       string   // if set, use this ID instead of generating one
-	Kind     string
-	Title    string
-	Type     string
-	Priority int
-	Assignee string
-	Tags     []string
-	Body     string
-	Targets  []string // file paths — auto-resolved to edges
-	Edges    []Edge
-	Slot     string
+	ID        string    // if set, use this ID instead of generating one
+	Kind      string
+	Title     string
+	Type      string
+	Priority  int
+	Assignee  string
+	Tags      []string
+	Body      string
+	Targets   []string  // file paths — auto-resolved to edges
+	Edges     []Edge
+	Slot      string
+	Timestamp time.Time // if set, use this instead of time.Now()
 }
 
 // AppendOptions controls event/comment appending.
 type AppendOptions struct {
-	TargetID string // the note ID this applies to
-	Kind     string // "event" or "comment"
-	Body     string
-	Field    string // for events: which field changed
-	Value    string // for events: new value
-	Edges    []Edge
-	Slot     string
+	TargetID  string    // the note ID this applies to
+	Kind      string    // "event" or "comment"
+	Body      string
+	Field     string    // for events: which field changed
+	Value     string    // for events: new value
+	Edges     []Edge
+	Slot      string
+	Timestamp time.Time // if set, use this instead of time.Now()
 
 	// For comments
 	Location *Location

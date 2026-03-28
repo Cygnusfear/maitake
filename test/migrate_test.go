@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/migrate"
@@ -467,6 +468,216 @@ func TestMigrate_RamboardTickets(t *testing.T) {
 	}
 	if foldErrors > 0 {
 		t.Errorf("%d fold errors", foldErrors)
+	}
+}
+
+// === TIMESTAMP AND BRANCH REGRESSION ===
+
+func TestMigrate_TimestampsPopulated(t *testing.T) {
+	dir, engine := setupMigrateRepo(t)
+	writeTicketFile(t, dir, "tre-ts.md", `---
+id: tre-ts
+status: open
+deps: []
+links: []
+created: 2026-03-15T14:30:00Z
+type: task
+priority: 2
+---
+# Timestamp test
+
+Should have real timestamps.
+`)
+
+	migrate.Run(engine, migrate.Options{TicketsDir: filepath.Join(dir, ".tickets")})
+
+	state, err := engine.Fold("tre-ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CreatedAt must be the ORIGINAL timestamp, not the migration time
+	if state.CreatedAt.IsZero() {
+		t.Fatal("CreatedAt is zero — timestamp not hydrated during migration")
+	}
+	want, _ := time.Parse(time.RFC3339, "2026-03-15T14:30:00Z")
+	if !state.CreatedAt.Equal(want) {
+		t.Errorf("CreatedAt = %v, want %v (original tk timestamp)", state.CreatedAt, want)
+	}
+	if state.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt is zero — timestamp not hydrated during migration")
+	}
+}
+
+func TestMigrate_ClosedTicket_TimestampsPopulated(t *testing.T) {
+	dir, engine := setupMigrateRepo(t)
+	writeTicketFile(t, dir, "tre-cts.md", `---
+id: tre-cts
+status: closed
+deps: []
+links: []
+created: 2026-02-01T10:00:00Z
+type: bug
+priority: 1
+---
+# Closed with timestamps
+
+Should have real timestamps even when closed.
+`)
+
+	migrate.Run(engine, migrate.Options{TicketsDir: filepath.Join(dir, ".tickets")})
+
+	state, err := engine.Fold("tre-cts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := time.Parse(time.RFC3339, "2026-02-01T10:00:00Z")
+	if !state.CreatedAt.Equal(want) {
+		t.Errorf("CreatedAt = %v, want %v (original tk timestamp)", state.CreatedAt, want)
+	}
+	if state.Status != "closed" {
+		t.Errorf("Status = %q, want closed", state.Status)
+	}
+}
+
+func TestMigrate_WithComments_TimestampsPopulated(t *testing.T) {
+	dir, engine := setupMigrateRepo(t)
+	writeTicketFile(t, dir, "tre-cmt.md", `---
+id: tre-cmt
+status: open
+deps: []
+links: []
+created: 2026-03-01T10:00:00Z
+type: task
+priority: 2
+---
+# Comments timestamp test
+
+## Notes
+
+**2026-03-05T12:00:00Z**
+
+First comment.
+
+**2026-03-10T15:00:00Z**
+
+Second comment.
+`)
+
+	migrate.Run(engine, migrate.Options{TicketsDir: filepath.Join(dir, ".tickets")})
+
+	state, err := engine.Fold("tre-cmt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCreated, _ := time.Parse(time.RFC3339, "2026-03-01T10:00:00Z")
+	if !state.CreatedAt.Equal(wantCreated) {
+		t.Errorf("CreatedAt = %v, want %v", state.CreatedAt, wantCreated)
+	}
+
+	// UpdatedAt should be the last comment's timestamp
+	wantUpdated, _ := time.Parse(time.RFC3339, "2026-03-10T15:00:00Z")
+	if !state.UpdatedAt.Equal(wantUpdated) {
+		t.Errorf("UpdatedAt = %v, want %v (last comment timestamp)", state.UpdatedAt, wantUpdated)
+	}
+
+	// Verify individual comment timestamps
+	if len(state.Comments) != 2 {
+		t.Fatalf("Comments = %d, want 2", len(state.Comments))
+	}
+	wantComment1, _ := time.Parse(time.RFC3339, "2026-03-05T12:00:00Z")
+	if !state.Comments[0].Time.Equal(wantComment1) {
+		t.Errorf("Comment[0].Time = %v, want %v", state.Comments[0].Time, wantComment1)
+	}
+	wantComment2, _ := time.Parse(time.RFC3339, "2026-03-10T15:00:00Z")
+	if !state.Comments[1].Time.Equal(wantComment2) {
+		t.Errorf("Comment[1].Time = %v, want %v", state.Comments[1].Time, wantComment2)
+	}
+}
+
+func TestMigrate_BranchStamped(t *testing.T) {
+	dir, engine := setupMigrateRepo(t)
+	writeTicketFile(t, dir, "tre-br.md", `---
+id: tre-br
+status: open
+deps: []
+links: []
+created: 2026-03-01T10:00:00Z
+type: task
+priority: 2
+---
+# Branch stamp test
+
+Should have the current branch stamped.
+`)
+
+	migrate.Run(engine, migrate.Options{TicketsDir: filepath.Join(dir, ".tickets")})
+
+	// The note should have the current branch stamped
+	note, err := engine.Get("tre-br")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// In a test repo the branch is usually "main" or "master"
+	// The important thing is it's not empty
+	if note.Branch == "" {
+		t.Error("Branch should be stamped on migrated note, got empty")
+	}
+}
+
+func TestMigrate_DepsLinksInSummary(t *testing.T) {
+	dir, engine := setupMigrateRepo(t)
+	writeTicketFile(t, dir, "tre-a.md", `---
+id: tre-a
+status: open
+deps: [tre-b]
+links: [tre-c]
+created: 2026-03-01T10:00:00Z
+type: task
+priority: 1
+---
+# Has deps and links
+`)
+	writeTicketFile(t, dir, "tre-b.md", `---
+id: tre-b
+status: open
+deps: []
+links: []
+created: 2026-03-01T10:00:00Z
+type: task
+priority: 2
+---
+# Dep target
+`)
+	writeTicketFile(t, dir, "tre-c.md", `---
+id: tre-c
+status: open
+deps: []
+links: []
+created: 2026-03-01T10:00:00Z
+type: task
+priority: 2
+---
+# Link target
+`)
+
+	migrate.Run(engine, migrate.Options{TicketsDir: filepath.Join(dir, ".tickets")})
+
+	summaries, _ := engine.List(notes.ListOptions{})
+	var found bool
+	for _, s := range summaries {
+		if s.ID == "tre-a" {
+			found = true
+			if len(s.Deps) != 1 || s.Deps[0] != "tre-b" {
+				t.Errorf("summary.Deps = %v, want [tre-b]", s.Deps)
+			}
+			if len(s.Links) != 1 || s.Links[0] != "tre-c" {
+				t.Errorf("summary.Links = %v, want [tre-c]", s.Links)
+			}
+		}
+	}
+	if !found {
+		t.Error("tre-a not found in list")
 	}
 }
 

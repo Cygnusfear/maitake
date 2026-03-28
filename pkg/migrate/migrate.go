@@ -88,16 +88,17 @@ func migrateOne(engine notes.Engine, file string, dryRun bool) Result {
 		return result
 	}
 
-	// Create the note — preserve the original tk ID
+	// Create the note — preserve the original tk ID and timestamp
 	createOpts := notes.CreateOptions{
-		ID:       ticket.ID,
-		Kind:     "ticket",
-		Title:    ticket.Title,
-		Type:     ticket.Type,
-		Priority: ticket.Priority,
-		Assignee: ticket.Assignee,
-		Tags:     ticket.Tags,
-		Body:     ticket.Body,
+		ID:        ticket.ID,
+		Kind:      "ticket",
+		Title:     ticket.Title,
+		Type:      ticket.Type,
+		Priority:  ticket.Priority,
+		Assignee:  ticket.Assignee,
+		Tags:      ticket.Tags,
+		Body:      ticket.Body,
+		Timestamp: ticket.Created,
 	}
 
 	// Add edges for deps, links, parent
@@ -152,13 +153,19 @@ func migrateOne(engine notes.Engine, file string, dryRun bool) Result {
 		})
 	}
 
-	// Migrate comments
+	// Migrate comments — preserve original timestamps
 	for _, comment := range ticket.Comments {
-		engine.Append(notes.AppendOptions{
+		appendOpts := notes.AppendOptions{
 			TargetID: note.ID,
 			Kind:     "comment",
 			Body:     comment.Body,
-		})
+		}
+		if comment.Timestamp != "" {
+			if t, err := time.Parse(time.RFC3339, comment.Timestamp); err == nil {
+				appendOpts.Timestamp = t
+			}
+		}
+		engine.Append(appendOpts)
 		result.Comments++
 	}
 

@@ -276,3 +276,128 @@ func TestFold_ArtifactBornClosed(t *testing.T) {
 		t.Errorf("Status = %q, want closed (artifact born closed)", state.Status)
 	}
 }
+
+// === TIMESTAMP REGRESSION TESTS ===
+
+func TestFold_CreatedAtFromTimestamp(t *testing.T) {
+	creation := &Note{
+		ID:        "t-ts",
+		Kind:      "ticket",
+		Timestamp: "2026-03-15T14:30:00Z",
+		Time:      ts("2026-03-15T14:30:00Z"),
+	}
+
+	state := FoldEvents(creation, nil)
+	want := ts("2026-03-15T14:30:00Z")
+	if !state.CreatedAt.Equal(want) {
+		t.Errorf("CreatedAt = %v, want %v", state.CreatedAt, want)
+	}
+	if !state.UpdatedAt.Equal(want) {
+		t.Errorf("UpdatedAt = %v, want %v (no events, should match created)", state.UpdatedAt, want)
+	}
+}
+
+func TestFold_UpdatedAtFromEvents(t *testing.T) {
+	creation := &Note{
+		ID:   "t-upd",
+		Kind: "ticket",
+		Time: ts("2026-03-01T10:00:00Z"),
+	}
+	events := []*Note{
+		{
+			Kind: "comment",
+			Body: "first",
+			Time: ts("2026-03-05T12:00:00Z"),
+		},
+		{
+			Kind: "comment",
+			Body: "second",
+			Time: ts("2026-03-10T15:00:00Z"),
+		},
+	}
+
+	state := FoldEvents(creation, events)
+	if !state.CreatedAt.Equal(ts("2026-03-01T10:00:00Z")) {
+		t.Errorf("CreatedAt = %v, want 2026-03-01", state.CreatedAt)
+	}
+	if !state.UpdatedAt.Equal(ts("2026-03-10T15:00:00Z")) {
+		t.Errorf("UpdatedAt = %v, want 2026-03-10 (latest event)", state.UpdatedAt)
+	}
+}
+
+func TestFold_ZeroTimeCreation(t *testing.T) {
+	// Old notes without timestamps — Time is zero
+	creation := &Note{
+		ID:   "t-zero",
+		Kind: "ticket",
+		// Time is zero value
+	}
+
+	state := FoldEvents(creation, nil)
+	if !state.CreatedAt.IsZero() {
+		t.Errorf("CreatedAt should be zero for notes without timestamp, got %v", state.CreatedAt)
+	}
+}
+
+// === BRANCH REGRESSION TESTS ===
+
+func TestFold_BranchFromCreation(t *testing.T) {
+	creation := &Note{
+		ID:     "t-branch",
+		Kind:   "ticket",
+		Branch: "feature/auth",
+		Time:   ts("2026-03-01T10:00:00Z"),
+	}
+
+	state := FoldEvents(creation, nil)
+	if state.Branch != "feature/auth" {
+		t.Errorf("Branch = %q, want feature/auth", state.Branch)
+	}
+}
+
+func TestFold_NoBranch(t *testing.T) {
+	creation := &Note{
+		ID:   "t-nobr",
+		Kind: "ticket",
+		Time: ts("2026-03-01T10:00:00Z"),
+	}
+
+	state := FoldEvents(creation, nil)
+	if state.Branch != "" {
+		t.Errorf("Branch = %q, want empty", state.Branch)
+	}
+}
+
+// === TOSUMMARY REGRESSION TESTS ===
+
+func TestToSummary_IncludesDepsLinksAssigneeBranch(t *testing.T) {
+	state := &State{
+		ID:       "t-sum",
+		Kind:     "ticket",
+		Status:   "open",
+		Priority: 1,
+		Title:    "Test",
+		Tags:     []string{"auth"},
+		Targets:  []string{"src/auth.ts"},
+		Deps:     []string{"dep-1", "dep-2"},
+		Links:    []string{"link-1"},
+		Assignee: "Alice",
+		Branch:   "feature/auth",
+		CreatedAt: ts("2026-03-01T10:00:00Z"),
+		UpdatedAt: ts("2026-03-05T15:00:00Z"),
+	}
+
+	summary := ToSummary(state)
+	if len(summary.Deps) != 2 {
+		t.Errorf("summary.Deps = %v, want [dep-1 dep-2]", summary.Deps)
+	}
+	if len(summary.Links) != 1 {
+		t.Errorf("summary.Links = %v, want [link-1]", summary.Links)
+	}
+	if summary.Assignee != "Alice" {
+		t.Errorf("summary.Assignee = %q, want Alice", summary.Assignee)
+	}
+	if summary.Branch != "feature/auth" {
+		t.Errorf("summary.Branch = %q, want feature/auth", summary.Branch)
+	}
+}
