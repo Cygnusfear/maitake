@@ -144,6 +144,9 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	e.index.Ingest(note)
 	e.index.Build()
 
+	// Update cache with new ref tip
+	e.updateCache(ref)
+
 	// Auto-push to remote
 	e.autoPush(ref)
 
@@ -235,6 +238,9 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	// Update index
 	e.index.Ingest(note)
 	e.index.Build()
+
+	// Update cache with new ref tip
+	e.updateCache(ref)
 
 	// Auto-push to remote
 	e.autoPush(ref)
@@ -418,17 +424,35 @@ func (e *RealEngine) Doctor() (*DoctorReport, error) {
 }
 
 // Rebuild forces a full index rebuild from git.
+// Uses ~/.maitake/cache/ to skip git reads when the ref tip hasn't changed.
 func (e *RealEngine) Rebuild() error {
 	idx := NewIndex()
+	ref := e.activeRef()
+
+	// Check cache — keyed by notes ref tip SHA
+	tipOID := refTipOID(e.repo, ref)
+	if tipOID != "" {
+		if cached := loadCache(e.repoPath, tipOID); cached != nil {
+			for _, n := range cached {
+				idx.Ingest(n)
+			}
+			idx.Build()
+			e.index = idx
+			return nil
+		}
+	}
+
+	// Cache miss — full rebuild from git
+	var allNotes []*Note
 
 	// Scan all maitake refs
 	// For now, scan the active ref only
 	// TODO: scan all maitake refs (slots, branches) when NoteRefs is added
-	refs := []git.NotesRef{e.activeRef()}
-	for _, ref := range refs {
-		entries := e.repo.ListAllNotedObjects(ref)
+	refs := []git.NotesRef{ref}
+	for _, r := range refs {
+		entries := e.repo.ListAllNotedObjects(r)
 		for _, oid := range entries {
-			noteData := e.repo.GetNotes(ref, oid)
+			noteData := e.repo.GetNotes(r, oid)
 			if len(noteData) == 0 {
 				continue
 			}
@@ -438,15 +462,39 @@ func (e *RealEngine) Rebuild() error {
 					continue // skip unparseable notes
 				}
 				note.TargetOID = string(oid)
-				note.Ref = string(ref)
+				note.Ref = string(r)
 				idx.Ingest(note)
+				allNotes = append(allNotes, note)
 			}
 		}
 	}
 
 	idx.Build()
 	e.index = idx
+
+	// Write cache for next time
+	if tipOID != "" {
+		writeCache(e.repoPath, tipOID, allNotes)
+	}
+
 	return nil
+}
+
+// updateCache writes the current index to the cache after a write.
+func (e *RealEngine) updateCache(ref git.NotesRef) {
+	tipOID := refTipOID(e.repo, ref)
+	if tipOID == "" {
+		return
+	}
+	// Collect all notes from the index
+	var allNotes []*Note
+	for _, n := range e.index.CreationNotes {
+		allNotes = append(allNotes, n)
+	}
+	for _, events := range e.index.EventsByTarget {
+		allNotes = append(allNotes, events...)
+	}
+	writeCache(e.repoPath, tipOID, allNotes)
 }
 
 // currentGitBranch returns the short branch name (e.g. "feature/auth").
