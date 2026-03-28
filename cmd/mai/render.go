@@ -1,11 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
+
+func printJSON(v any) {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.Encode(v)
+}
 
 func printState(s *notes.State) {
 	fmt.Printf("%-8s [%s] %s\n", s.ID, s.Status, s.Title)

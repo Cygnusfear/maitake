@@ -10,14 +10,33 @@ import (
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
+// globalJSON is set by --json flag for machine-readable output.
+var globalJSON bool
+
 func main() {
-	if len(os.Args) < 2 {
+	// Extract global flags before subcommand dispatch
+	var rawArgs []string
+	for i := 1; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "-C":
+			i++
+			if i < len(os.Args) {
+				globalDir = os.Args[i]
+			}
+		case "--json":
+			globalJSON = true
+		default:
+			rawArgs = append(rawArgs, os.Args[i])
+		}
+	}
+
+	if len(rawArgs) < 1 {
 		runList(nil, []string{})
 		return
 	}
 
-	cmd := os.Args[1]
-	args := os.Args[2:]
+	cmd := rawArgs[0]
+	args := rawArgs[1:]
 
 	switch cmd {
 	case "init":
@@ -82,12 +101,19 @@ func main() {
 	}
 }
 
+// globalDir is set by -C flag to override working directory.
+var globalDir string
+
 func withEngine(fn func(notes.Engine)) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		fatal("getting working directory: %v", err)
+	dir := globalDir
+	if dir == "" {
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			fatal("getting working directory: %v", err)
+		}
 	}
-	repo, err := git.NewGitRepo(cwd)
+	repo, err := git.NewGitRepo(dir)
 	if err != nil {
 		fatal("not a git repository (or any parent)")
 	}

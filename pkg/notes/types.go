@@ -81,40 +81,40 @@ type Range struct {
 
 // State is the computed current state of a note after folding all events.
 type State struct {
-	ID        string
-	Kind      string
-	Status    string // computed: "open", "in_progress", "closed"
-	Title     string
-	Type      string
-	Priority  int
-	Assignee  string
-	Tags      []string
-	Body      string
-	Targets   []string // file paths targeted
-	Deps      []string // note IDs this depends on
-	Links     []string // note IDs linked to
-	ParentID  string   // parent note ID (from part-of edge)
-	Events    []Note
-	Comments  []Note
-	Resolved  *bool // aggregate resolution status
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	NoteOID   string
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Status    string    `json:"status"`
+	Title     string    `json:"title,omitempty"`
+	Type      string    `json:"type,omitempty"`
+	Priority  int       `json:"priority,omitempty"`
+	Assignee  string    `json:"assignee,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Body      string    `json:"body,omitempty"`
+	Targets   []string  `json:"targets,omitempty"`
+	Deps      []string  `json:"deps,omitempty"`
+	Links     []string  `json:"links,omitempty"`
+	ParentID  string    `json:"parentId,omitempty"`
+	Events    []Note    `json:"events,omitempty"`
+	Comments  []Note    `json:"comments,omitempty"`
+	Resolved  *bool     `json:"resolved,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	NoteOID   string    `json:"noteOid,omitempty"`
 }
 
 // StateSummary is a lightweight State for list views.
 type StateSummary struct {
-	ID        string
-	Kind      string
-	Status    string
-	Type      string
-	Priority  int
-	Title     string
-	Tags      []string
-	Targets   []string
-	Resolved  *bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Status    string    `json:"status"`
+	Type      string    `json:"type,omitempty"`
+	Priority  int       `json:"priority,omitempty"`
+	Title     string    `json:"title,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Targets   []string  `json:"targets,omitempty"`
+	Resolved  *bool     `json:"resolved,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // KindCount is a kind with its usage count.

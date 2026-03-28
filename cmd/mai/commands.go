@@ -124,6 +124,10 @@ func runShow(e notes.Engine, args []string) {
 	if err != nil {
 		fatal("show: %v", err)
 	}
+	if globalJSON {
+		printJSON(state)
+		return
+	}
 	printState(state)
 }
 
@@ -163,13 +167,21 @@ func runList(e notes.Engine, args []string) {
 		fatal("ls: %v", err)
 	}
 
+	var filtered []notes.StateSummary
 	for _, s := range summaries {
-		// Default filter: open + in_progress only
 		if !showAll && f.status == "" {
 			if s.Status != "open" && s.Status != "in_progress" {
 				continue
 			}
 		}
+		filtered = append(filtered, s)
+	}
+
+	if globalJSON {
+		printJSON(filtered)
+		return
+	}
+	for _, s := range filtered {
 		printSummaryLine(s)
 	}
 }
@@ -441,6 +453,10 @@ func runContext(e notes.Engine, args []string) {
 	}
 	if len(states) == 0 {
 		fmt.Printf("No notes on %s\n", args[0])
+		return
+	}
+	if globalJSON {
+		printJSON(states)
 		return
 	}
 	fmt.Printf("=== %s ===\n\n", args[0])
