@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const separator = "\n"
@@ -22,6 +23,13 @@ func Parse(raw []byte) (*Note, error) {
 
 	if note.Kind == "" {
 		return nil, fmt.Errorf("note missing required 'kind' field")
+	}
+
+	// Hydrate computed Time from stored Timestamp string
+	if note.Timestamp != "" {
+		if t, err := time.Parse(time.RFC3339, note.Timestamp); err == nil {
+			note.Time = t
+		}
 	}
 
 	return &note, nil
