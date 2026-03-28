@@ -5,11 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/guard"
 )
+
+const pushDebounceDelay = 500 * time.Millisecond
 
 // RealEngine implements Engine using a git repo, guard hooks, and an in-memory index.
 type RealEngine struct {
@@ -19,6 +22,12 @@ type RealEngine struct {
 	scope      string // current branch scope (empty = main)
 	index      *Index
 	config     Config
+
+	// Push debounce: coalesce rapid writes into one push
+	pushMu      sync.Mutex
+	pushPending bool
+	pushTimer   *time.Timer
+	lastNoteID  string // most recent note ID for hook
 }
 
 // NewEngine creates a new Engine backed by the given git repo.
@@ -147,8 +156,8 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	// Update cache with new ref tip
 	e.updateCache(ref)
 
-	// Auto-push to remote (async — don't block the caller)
-	go e.autoPush(ref, note.ID)
+	// Auto-push to remote (debounced — coalesces rapid writes)
+	e.schedulePush(ref, note.ID)
 
 	return note, nil
 }
@@ -242,8 +251,8 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	// Update cache with new ref tip
 	e.updateCache(ref)
 
-	// Auto-push to remote (async — don't block the caller)
-	go e.autoPush(ref, fullID)
+	// Auto-push to remote (debounced — coalesces rapid writes)
+	e.schedulePush(ref, fullID)
 
 	return note, nil
 }
@@ -538,6 +547,29 @@ func (e *RealEngine) Sync() error {
 	}
 
 	return nil
+}
+
+// schedulePush debounces auto-push. Multiple writes within 500ms coalesce into one push.
+func (e *RealEngine) schedulePush(ref git.NotesRef, noteID string) {
+	if e.config.Remote == "" {
+		return
+	}
+
+	e.pushMu.Lock()
+	defer e.pushMu.Unlock()
+
+	e.lastNoteID = noteID
+
+	if e.pushTimer != nil {
+		e.pushTimer.Stop()
+	}
+
+	e.pushTimer = time.AfterFunc(pushDebounceDelay, func() {
+		e.pushMu.Lock()
+		id := e.lastNoteID
+		e.pushMu.Unlock()
+		e.autoPush(ref, id)
+	})
 }
 
 // autoPush pushes the notes ref to the configured remote if set.

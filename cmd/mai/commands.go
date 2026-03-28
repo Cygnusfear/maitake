@@ -262,24 +262,37 @@ func runLifecycle(e notes.Engine, status string, args []string) {
 
 func runClose(e notes.Engine, args []string) {
 	if len(args) < 1 {
-		fatal("usage: mai close <id> [-m message]")
+		fatal("usage: mai close <id> [<id>...] [-m message]")
 	}
-	id := args[0]
-	f, _ := parseFlags(args[1:])
 
-	_, err := e.Append(notes.AppendOptions{
-		TargetID: id,
-		Kind:     "event",
-		Field:    "status",
-		Value:    "closed",
-		Body:     f.body,
-	})
-	if err != nil {
-		fatal("close: %v", err)
+	// Split IDs from flags
+	var ids []string
+	var flagArgs []string
+	for i, a := range args {
+		if strings.HasPrefix(a, "-") {
+			flagArgs = args[i:]
+			break
+		}
+		ids = append(ids, a)
 	}
-	state, _ := e.Fold(id)
-	if state != nil {
-		fmt.Printf("%s → closed\n", state.ID)
+	f, _ := parseFlags(flagArgs)
+
+	for _, id := range ids {
+		_, err := e.Append(notes.AppendOptions{
+			TargetID: id,
+			Kind:     "event",
+			Field:    "status",
+			Value:    "closed",
+			Body:     f.body,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "close %s: %v\n", id, err)
+			continue
+		}
+		state, _ := e.Fold(id)
+		if state != nil {
+			fmt.Printf("%s → closed\n", state.ID)
+		}
 	}
 }
 
