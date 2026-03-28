@@ -22,6 +22,8 @@ func main() {
 	switch cmd {
 	case "init":
 		runInit(args)
+	case "sync":
+		withEngine(func(e notes.Engine) { runSync(e, args) })
 	case "create":
 		withEngine(func(e notes.Engine) { runCreate(e, args) })
 	case "show":
@@ -136,7 +138,8 @@ Query:
   doctor                     Graph health report
 
 Setup:
-  init                       Create .maitake/hooks/ with defaults
+  init [--remote R] [--block H]  Create .maitake/ with hooks, config, gitignore
+  sync                           Manual fetch + merge + push
 
 Create options:
   -k, --kind KIND            Note kind (ticket, warning, review, etc.)

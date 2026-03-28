@@ -202,4 +202,6 @@ type Engine interface {
 	CurrentBranch() string
 	Doctor() (*DoctorReport, error)
 	Rebuild() error
+	Sync() error
+	GetConfig() Config
 }

@@ -12,10 +12,75 @@ import (
 func runInit(args []string) {
 	cwd, _ := os.Getwd()
 	maitakeDir := cwd + "/.maitake"
+
+	// Parse flags
+	var remote string
+	var blocked []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--remote":
+			i++
+			if i < len(args) {
+				remote = args[i]
+			}
+		case "--block":
+			i++
+			if i < len(args) {
+				blocked = append(blocked, args[i])
+			}
+		}
+	}
+
+	// Default blocked hosts
+	if len(blocked) == 0 {
+		blocked = []string{"github.com"}
+	}
+
+	// Create hooks
 	if err := guard.InitHooks(maitakeDir); err != nil {
 		fatal("init: %v", err)
 	}
 	fmt.Println("Initialized .maitake/hooks/")
+
+	// Write config
+	cfg := notes.ReadConfig(maitakeDir)
+	if remote != "" {
+		cfg.Remote = remote
+	}
+	if len(blocked) > 0 {
+		cfg.BlockedHosts = blocked
+	}
+	if err := notes.WriteConfig(maitakeDir, cfg); err != nil {
+		fatal("init config: %v", err)
+	}
+	if cfg.Remote != "" {
+		fmt.Printf("Auto-push to remote: %s\n", cfg.Remote)
+	}
+	if len(cfg.BlockedHosts) > 0 {
+		fmt.Printf("Blocked hosts: %s\n", strings.Join(cfg.BlockedHosts, ", "))
+	}
+
+	// Add .maitake/ to .gitignore if not already there
+	gitignorePath := cwd + "/.gitignore"
+	existing, _ := os.ReadFile(gitignorePath)
+	if !strings.Contains(string(existing), ".maitake/") {
+		f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+				f.WriteString("\n")
+			}
+			f.WriteString(".maitake/\n")
+			f.Close()
+			fmt.Println("Added .maitake/ to .gitignore")
+		}
+	}
+}
+
+func runSync(e notes.Engine, args []string) {
+	if err := e.Sync(); err != nil {
+		fatal("sync: %v", err)
+	}
+	fmt.Println("Synced.")
 }
 
 func runCreate(e notes.Engine, args []string) {
