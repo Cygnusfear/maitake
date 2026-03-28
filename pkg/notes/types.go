@@ -4,44 +4,83 @@ package notes
 
 import "time"
 
-// Note is a parsed note — creation note, event, or comment.
+// Note is the stored unit. One JSON line in a git note.
+// Creation notes have an ID. Events and comments do not.
 type Note struct {
-	// Core fields (from headers)
-	ID       string            // human-readable ID (creation notes only; events/comments have "")
-	Kind     string            // required: "ticket", "warning", "event", "comment", etc.
-	Title    string            // optional short label
-	Type     string            // optional: "task", "bug", "feature", "artifact", etc.
-	Status   string            // optional: "open", "in_progress", "closed"
-	Priority int               // optional (0 = unset)
-	Assignee string            // optional
-	Tags     []string          // optional
-	Field    string            // for events: which field changed
-	Value    string            // for events: new value
-	Edges    []Edge            // typed links to other objects
-	Headers  map[string]string // unknown headers preserved here
+	// Identity
+	ID   string `json:"id,omitempty"`   // human-readable ID (creation notes only)
+	Kind string `json:"kind"`           // required: "ticket", "warning", "event", "comment", etc.
 
-	// Body (everything after the blank line)
-	Body string
+	// Metadata (all optional)
+	Type     string   `json:"type,omitempty"`     // "task", "bug", "feature", "artifact", etc.
+	Status   string   `json:"status,omitempty"`   // "open", "in_progress", "closed"
+	Title    string   `json:"title,omitempty"`    // short label
+	Priority int      `json:"priority,omitempty"` // 0 = unset
+	Assignee string   `json:"assignee,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
 
-	// Git metadata (populated on read from git, not serialized)
-	OID       string    // this note's blob OID
-	TargetOID string    // the git object this note is attached to
-	Ref       string    // which notes ref this came from
-	Slot      string    // slot name (empty = default)
-	Timestamp time.Time // from git or header
-	Author    string    // from git
+	// Event fields
+	Field string `json:"field,omitempty"` // which field changed
+	Value string `json:"value,omitempty"` // new value
+
+	// Edges
+	Edges []Edge `json:"edges,omitempty"`
+
+	// Location (for file-level review comments)
+	Location *Location `json:"location,omitempty"`
+
+	// Content
+	Body string `json:"body,omitempty"` // markdown content
+
+	// Threading
+	Parent   string `json:"parent,omitempty"`   // parent comment ID (for threaded replies)
+	Original string `json:"original,omitempty"` // original comment ID (for edits)
+
+	// Resolution (tri-state: nil = FYI, true = resolved, false = unresolved)
+	Resolved *bool `json:"resolved,omitempty"`
+
+	// Timestamps
+	Timestamp string `json:"timestamp,omitempty"` // creation/event time (unix or ISO)
+	Author    string `json:"author,omitempty"`
+
+	// Git metadata (populated on read, not stored in JSON)
+	OID       string `json:"-"`
+	TargetOID string `json:"-"`
+	Ref       string `json:"-"`
+	Slot      string `json:"-"`
+
+	// Parsed timestamp (computed, not stored)
+	Time time.Time `json:"-"`
 }
 
 // Edge is a typed link to another git object or note.
 type Edge struct {
-	Type   string     // "targets", "closes", "on", "depends-on", etc.
-	Target EdgeTarget // what the edge points at
+	Type   string `json:"type"`   // "targets", "closes", "on", "depends-on", etc.
+	Target string `json:"target"` // "path:src/auth.ts", "note:tre-5c4a", "commit:abc123", etc.
 }
 
-// EdgeTarget identifies what an edge points at.
-type EdgeTarget struct {
-	Kind string // "commit", "blob", "tree", "path", "note", "change"
-	Ref  string // the OID, file path, or note ID
+// ParseEdgeTarget splits an edge target string like "path:src/auth.ts" into kind and ref.
+func ParseEdgeTarget(target string) (kind, ref string) {
+	for i, c := range target {
+		if c == ':' {
+			return target[:i], target[i+1:]
+		}
+	}
+	return "", target
+}
+
+// Location represents where a comment applies within a file.
+type Location struct {
+	Path  string `json:"path,omitempty"`
+	Range *Range `json:"range,omitempty"`
+}
+
+// Range represents a line/column range in a file.
+type Range struct {
+	StartLine   uint32 `json:"startLine"`
+	StartColumn uint32 `json:"startColumn,omitempty"`
+	EndLine     uint32 `json:"endLine,omitempty"`
+	EndColumn   uint32 `json:"endColumn,omitempty"`
 }
 
 // State is the computed current state of a note after folding all events.
@@ -55,15 +94,16 @@ type State struct {
 	Assignee  string
 	Tags      []string
 	Body      string
-	Targets   []string // file paths, commits targeted
+	Targets   []string // file paths targeted
 	Deps      []string // note IDs this depends on
 	Links     []string // note IDs linked to
 	ParentID  string   // parent note ID (from part-of edge)
-	Events    []Note   // all events, ordered by timestamp
-	Comments  []Note   // all comments, ordered by timestamp
+	Events    []Note
+	Comments  []Note
+	Resolved  *bool // aggregate resolution status
 	CreatedAt time.Time
-	UpdatedAt time.Time // timestamp of last event
-	NoteOID   string    // creation note's blob OID
+	UpdatedAt time.Time
+	NoteOID   string
 }
 
 // StateSummary is a lightweight State for list views.
@@ -76,6 +116,7 @@ type StateSummary struct {
 	Title     string
 	Tags      []string
 	Targets   []string
+	Resolved  *bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -109,7 +150,7 @@ type CreateOptions struct {
 	Assignee string
 	Tags     []string
 	Body     string
-	Targets  []string // file paths, commit refs — auto-resolved to edges
+	Targets  []string // file paths — auto-resolved to edges
 	Edges    []Edge
 	Slot     string
 }
@@ -123,6 +164,11 @@ type AppendOptions struct {
 	Value    string // for events: new value
 	Edges    []Edge
 	Slot     string
+
+	// For comments
+	Location *Location
+	Parent   string // parent comment ID for threading
+	Resolved *bool
 }
 
 // FindOptions filters for queries.

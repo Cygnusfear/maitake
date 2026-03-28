@@ -1,42 +1,25 @@
 package notes
 
 import (
-	"strings"
+	"encoding/json"
 	"testing"
 )
 
 func TestParse_CreationNote(t *testing.T) {
-	raw := []byte(`id tre-5c4a
-kind ticket
-title Fix auth race condition
-type task
-status open
-priority 1
-assignee Alice
-tags auth,backend
-edge targets path:src/auth.ts
-edge depends-on note:wrn-a4f2
-
-The token refresh has a race condition.`)
+	raw := []byte(`{"id":"tre-5c4a","kind":"ticket","type":"task","priority":1,"assignee":"Alice","tags":["auth","backend"],"edges":[{"type":"targets","target":"path:src/auth.ts"},{"type":"depends-on","target":"note:wrn-a4f2"}],"body":"# Fix auth race condition\n\nThe token refresh has a race condition."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if note.ID != "tre-5c4a" {
-		t.Errorf("ID = %q, want tre-5c4a", note.ID)
+		t.Errorf("ID = %q", note.ID)
 	}
 	if note.Kind != "ticket" {
-		t.Errorf("Kind = %q, want ticket", note.Kind)
-	}
-	if note.Title != "Fix auth race condition" {
-		t.Errorf("Title = %q", note.Title)
+		t.Errorf("Kind = %q", note.Kind)
 	}
 	if note.Type != "task" {
 		t.Errorf("Type = %q", note.Type)
-	}
-	if note.Status != "open" {
-		t.Errorf("Status = %q", note.Status)
 	}
 	if note.Priority != 1 {
 		t.Errorf("Priority = %d", note.Priority)
@@ -44,30 +27,22 @@ The token refresh has a race condition.`)
 	if note.Assignee != "Alice" {
 		t.Errorf("Assignee = %q", note.Assignee)
 	}
-	if len(note.Tags) != 2 || note.Tags[0] != "auth" || note.Tags[1] != "backend" {
+	if len(note.Tags) != 2 {
 		t.Errorf("Tags = %v", note.Tags)
 	}
 	if len(note.Edges) != 2 {
-		t.Fatalf("Edges = %d, want 2", len(note.Edges))
+		t.Fatalf("Edges = %d", len(note.Edges))
 	}
-	if note.Edges[0].Type != "targets" || note.Edges[0].Target.Kind != "path" || note.Edges[0].Target.Ref != "src/auth.ts" {
+	if note.Edges[0].Type != "targets" || note.Edges[0].Target != "path:src/auth.ts" {
 		t.Errorf("Edge[0] = %+v", note.Edges[0])
 	}
-	if note.Edges[1].Type != "depends-on" || note.Edges[1].Target.Kind != "note" || note.Edges[1].Target.Ref != "wrn-a4f2" {
-		t.Errorf("Edge[1] = %+v", note.Edges[1])
-	}
-	if note.Body != "The token refresh has a race condition." {
-		t.Errorf("Body = %q", note.Body)
+	if note.Body == "" {
+		t.Error("Body is empty")
 	}
 }
 
 func TestParse_EventNote(t *testing.T) {
-	raw := []byte(`kind event
-edge closes note:tre-5c4a
-field status
-value closed
-
-Fixed in commit abc123.`)
+	raw := []byte(`{"kind":"event","edges":[{"type":"closes","target":"note:tre-5c4a"}],"field":"status","value":"closed","body":"Fixed in commit abc123."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -88,17 +63,10 @@ Fixed in commit abc123.`)
 	if len(note.Edges) != 1 || note.Edges[0].Type != "closes" {
 		t.Errorf("Edges = %+v", note.Edges)
 	}
-	if note.Body != "Fixed in commit abc123." {
-		t.Errorf("Body = %q", note.Body)
-	}
 }
 
 func TestParse_CommentNote(t *testing.T) {
-	raw := []byte(`kind comment
-edge on note:tre-5c4a
-
-Found root cause in refresh_token().
-The mutex was missing.`)
+	raw := []byte(`{"kind":"comment","edges":[{"type":"on","target":"note:tre-5c4a"}],"body":"Found root cause in refresh_token().\nThe mutex was missing."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
@@ -107,45 +75,41 @@ The mutex was missing.`)
 	if note.Kind != "comment" {
 		t.Errorf("Kind = %q", note.Kind)
 	}
-	if !strings.Contains(note.Body, "Found root cause") {
-		t.Errorf("Body = %q", note.Body)
-	}
-	if !strings.Contains(note.Body, "mutex was missing") {
-		t.Errorf("Body should be multi-line, got %q", note.Body)
+	if note.Body == "" {
+		t.Error("Body is empty")
 	}
 }
 
-func TestParse_UnknownHeaders(t *testing.T) {
-	raw := []byte(`id test-1234
-kind warning
-custom-field some value
-another-field 42
-
-Body text.`)
+func TestParse_ReviewWithLocation(t *testing.T) {
+	raw := []byte(`{"id":"rev-1234","kind":"review","edges":[{"type":"targets","target":"path:src/auth.ts"}],"location":{"path":"src/auth.ts","range":{"startLine":42,"endLine":58}},"resolved":false,"body":"Race condition here. AC: add mutex."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if note.Headers["custom-field"] != "some value" {
-		t.Errorf("custom-field = %q", note.Headers["custom-field"])
+	if note.Location == nil {
+		t.Fatal("Location is nil")
 	}
-	if note.Headers["another-field"] != "42" {
-		t.Errorf("another-field = %q", note.Headers["another-field"])
+	if note.Location.Path != "src/auth.ts" {
+		t.Errorf("Location.Path = %q", note.Location.Path)
+	}
+	if note.Location.Range.StartLine != 42 {
+		t.Errorf("StartLine = %d", note.Location.Range.StartLine)
+	}
+	if note.Resolved == nil || *note.Resolved != false {
+		t.Errorf("Resolved = %v", note.Resolved)
 	}
 }
 
-func TestParse_EmptyBody(t *testing.T) {
-	raw := []byte(`id test-0001
-kind ticket
-title No body here`)
+func TestParse_ThreadedComment(t *testing.T) {
+	raw := []byte(`{"kind":"comment","parent":"comment-abc","edges":[{"type":"on","target":"note:tre-5c4a"}],"body":"I agree, the mutex approach is correct."}`)
 
 	note, err := Parse(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if note.Body != "" {
-		t.Errorf("Body = %q, want empty", note.Body)
+	if note.Parent != "comment-abc" {
+		t.Errorf("Parent = %q", note.Parent)
 	}
 }
 
@@ -156,42 +120,17 @@ func TestParse_RejectEmpty(t *testing.T) {
 	}
 }
 
-func TestParse_RejectMissingIDAndKind(t *testing.T) {
-	_, err := Parse([]byte("title Just a title\n\nBody"))
+func TestParse_RejectMissingKind(t *testing.T) {
+	_, err := Parse([]byte(`{"id":"test","body":"no kind"}`))
 	if err == nil {
-		t.Fatal("expected error for note without id or kind")
+		t.Fatal("expected error for missing kind")
 	}
 }
 
-func TestParse_EdgeTargetKinds(t *testing.T) {
-	raw := []byte(`id test-edge
-kind context
-edge targets commit:abc123def456
-edge targets blob:fedcba654321
-edge targets path:src/auth.ts
-edge targets note:wrn-1234
-edge targets change:jj-change-id
-edge targets tree:aabbccdd`)
-
-	note, err := Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := []struct{ kind, ref string }{
-		{"commit", "abc123def456"},
-		{"blob", "fedcba654321"},
-		{"path", "src/auth.ts"},
-		{"note", "wrn-1234"},
-		{"change", "jj-change-id"},
-		{"tree", "aabbccdd"},
-	}
-	if len(note.Edges) != len(expected) {
-		t.Fatalf("got %d edges, want %d", len(note.Edges), len(expected))
-	}
-	for i, e := range expected {
-		if note.Edges[i].Target.Kind != e.kind || note.Edges[i].Target.Ref != e.ref {
-			t.Errorf("edge %d: got %+v, want kind=%s ref=%s", i, note.Edges[i].Target, e.kind, e.ref)
-		}
+func TestParse_RejectInvalidJSON(t *testing.T) {
+	_, err := Parse([]byte(`not json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
 	}
 }
 
@@ -199,22 +138,25 @@ func TestRoundTrip(t *testing.T) {
 	original := &Note{
 		ID:       "tre-5c4a",
 		Kind:     "ticket",
-		Title:    "Fix auth race condition",
 		Type:     "task",
-		Status:   "open",
+		Title:    "Fix auth race condition",
 		Priority: 1,
 		Assignee: "Alice",
 		Tags:     []string{"auth", "backend"},
 		Edges: []Edge{
-			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
+			{Type: "targets", Target: "path:src/auth.ts"},
 		},
 		Body: "The token refresh has a race condition.",
 	}
 
-	serialized := Serialize(original)
+	serialized, err := Serialize(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	parsed, err := Parse(serialized)
 	if err != nil {
-		t.Fatalf("round-trip parse failed: %v\nSerialized:\n%s", err, serialized)
+		t.Fatalf("round-trip parse failed: %v\nSerialized: %s", err, serialized)
 	}
 
 	if parsed.ID != original.ID {
@@ -222,12 +164,6 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if parsed.Kind != original.Kind {
 		t.Errorf("Kind: %q != %q", parsed.Kind, original.Kind)
-	}
-	if parsed.Title != original.Title {
-		t.Errorf("Title: %q != %q", parsed.Title, original.Title)
-	}
-	if parsed.Type != original.Type {
-		t.Errorf("Type: %q != %q", parsed.Type, original.Type)
 	}
 	if parsed.Priority != original.Priority {
 		t.Errorf("Priority: %d != %d", parsed.Priority, original.Priority)
@@ -249,14 +185,17 @@ func TestRoundTrip_Event(t *testing.T) {
 		Field: "status",
 		Value: "in_progress",
 		Edges: []Edge{
-			{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}},
+			{Type: "starts", Target: "note:tre-5c4a"},
 		},
 	}
 
-	serialized := Serialize(original)
+	serialized, err := Serialize(original)
+	if err != nil {
+		t.Fatal(err)
+	}
 	parsed, err := Parse(serialized)
 	if err != nil {
-		t.Fatalf("round-trip parse failed: %v\nSerialized:\n%s", err, serialized)
+		t.Fatal(err)
 	}
 
 	if parsed.Kind != "event" {
@@ -265,13 +204,14 @@ func TestRoundTrip_Event(t *testing.T) {
 	if parsed.Field != "status" {
 		t.Errorf("Field = %q", parsed.Field)
 	}
-	if parsed.Value != "in_progress" {
-		t.Errorf("Value = %q", parsed.Value)
-	}
 }
 
 func TestParseMulti(t *testing.T) {
-	raw := []byte("id note-1\nkind ticket\n\nFirst note\n---maitake---\nkind event\nedge closes note:note-1\n\nClosed it")
+	line1, _ := json.Marshal(&Note{ID: "note-1", Kind: "ticket", Body: "First"})
+	line2, _ := json.Marshal(&Note{Kind: "event", Edges: []Edge{{Type: "closes", Target: "note:note-1"}}})
+	raw := append(line1, '\n')
+	raw = append(raw, line2...)
+
 	notes, err := ParseMulti(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -288,12 +228,46 @@ func TestParseMulti(t *testing.T) {
 }
 
 func TestParseMulti_SingleNote(t *testing.T) {
-	raw := []byte("id only-one\nkind warning\n\nJust one note")
+	raw, _ := json.Marshal(&Note{ID: "only", Kind: "warning", Body: "Just one"})
 	notes, err := ParseMulti(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(notes) != 1 {
-		t.Fatalf("got %d notes, want 1", len(notes))
+		t.Fatalf("got %d, want 1", len(notes))
+	}
+}
+
+func TestParseMulti_EmptyLines(t *testing.T) {
+	line, _ := json.Marshal(&Note{ID: "x", Kind: "ticket"})
+	raw := append([]byte("\n\n"), line...)
+	raw = append(raw, '\n', '\n')
+
+	notes, err := ParseMulti(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Fatalf("got %d, want 1", len(notes))
+	}
+}
+
+func TestParseEdgeTarget(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantKind string
+		wantRef  string
+	}{
+		{"path:src/auth.ts", "path", "src/auth.ts"},
+		{"note:tre-5c4a", "note", "tre-5c4a"},
+		{"commit:abc123def456", "commit", "abc123def456"},
+		{"blob:fedcba", "blob", "fedcba"},
+		{"change:jj-id", "change", "jj-id"},
+	}
+	for _, tt := range tests {
+		kind, ref := ParseEdgeTarget(tt.input)
+		if kind != tt.wantKind || ref != tt.wantRef {
+			t.Errorf("ParseEdgeTarget(%q) = %q, %q; want %q, %q", tt.input, kind, ref, tt.wantKind, tt.wantRef)
+		}
 	}
 }

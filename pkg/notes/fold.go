@@ -3,7 +3,6 @@ package notes
 import (
 	"sort"
 	"strings"
-	"time"
 )
 
 // FoldEvents computes the current State from a creation note and its events/comments.
@@ -20,34 +19,36 @@ func FoldEvents(creation *Note, events []*Note) *State {
 		Assignee:  creation.Assignee,
 		Tags:      copyStrings(creation.Tags),
 		Body:      creation.Body,
-		CreatedAt: creation.Timestamp,
-		UpdatedAt: creation.Timestamp,
+		Resolved:  creation.Resolved,
+		CreatedAt: creation.Time,
+		UpdatedAt: creation.Time,
 		NoteOID:   creation.OID,
 	}
 
-	// Extract title from body if not set in headers
+	// Extract title from body if not set
 	if state.Title == "" && state.Body != "" {
 		state.Title = extractTitle(state.Body)
 	}
 
-	// Extract initial status from creation note if set
+	// Initial status from creation note
 	if creation.Status != "" {
 		state.Status = creation.Status
 	}
 
-	// Extract targets and deps from creation note edges
+	// Extract targets, deps, links from creation note edges
 	for _, e := range creation.Edges {
+		kind, ref := ParseEdgeTarget(e.Target)
 		switch e.Type {
 		case "targets":
-			if e.Target.Kind == "path" {
-				state.Targets = append(state.Targets, e.Target.Ref)
+			if kind == "path" {
+				state.Targets = append(state.Targets, ref)
 			}
 		case "depends-on":
-			state.Deps = append(state.Deps, e.Target.Ref)
+			state.Deps = append(state.Deps, ref)
 		case "links":
-			state.Links = append(state.Links, e.Target.Ref)
+			state.Links = append(state.Links, ref)
 		case "part-of":
-			state.ParentID = e.Target.Ref
+			state.ParentID = ref
 		}
 	}
 
@@ -55,7 +56,7 @@ func FoldEvents(creation *Note, events []*Note) *State {
 	sorted := make([]*Note, len(events))
 	copy(sorted, events)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Timestamp.Before(sorted[j].Timestamp)
+		return sorted[i].Time.Before(sorted[j].Time)
 	})
 
 	// Apply events
@@ -66,12 +67,15 @@ func FoldEvents(creation *Note, events []*Note) *State {
 		case "comment":
 			state.Comments = append(state.Comments, *ev)
 		default:
-			// Other kinds treated as comments
 			state.Comments = append(state.Comments, *ev)
 		}
 		state.Events = append(state.Events, *ev)
-		if !ev.Timestamp.IsZero() && ev.Timestamp.After(state.UpdatedAt) {
-			state.UpdatedAt = ev.Timestamp
+		if !ev.Time.IsZero() && ev.Time.After(state.UpdatedAt) {
+			state.UpdatedAt = ev.Time
+		}
+		// Update resolved from comments
+		if ev.Resolved != nil {
+			state.Resolved = ev.Resolved
 		}
 	}
 
@@ -79,7 +83,6 @@ func FoldEvents(creation *Note, events []*Note) *State {
 }
 
 func applyEvent(state *State, ev *Note) {
-	// Check edges for lifecycle events
 	for _, e := range ev.Edges {
 		switch e.Type {
 		case "closes":
@@ -91,7 +94,6 @@ func applyEvent(state *State, ev *Note) {
 		}
 	}
 
-	// Apply field changes
 	if ev.Field != "" {
 		applyFieldChange(state, ev.Field, ev.Value)
 	}
@@ -127,11 +129,9 @@ func applyTagChange(state *State, value string) {
 			state.Tags = append(state.Tags, tag)
 		}
 	} else if strings.HasPrefix(value, "-") {
-		tag := value[1:]
-		state.Tags = remove(state.Tags, tag)
+		state.Tags = remove(state.Tags, value[1:])
 	} else {
-		// Bare value = set the entire tags list
-		state.Tags = parseTags(value)
+		state.Tags = splitTags(value)
 	}
 }
 
@@ -142,19 +142,16 @@ func applySetChange(set *[]string, value string) {
 			*set = append(*set, item)
 		}
 	} else if strings.HasPrefix(value, "-") {
-		item := value[1:]
-		*set = remove(*set, item)
+		*set = remove(*set, value[1:])
 	}
 }
 
-// extractTitle extracts the first markdown heading from the body.
 func extractTitle(body string) string {
 	for _, line := range strings.Split(body, "\n") {
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimPrefix(line, "# ")
 		}
 	}
-	// Fall back to first non-empty line
 	for _, line := range strings.Split(body, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
@@ -178,6 +175,7 @@ func ToSummary(s *State) StateSummary {
 		Title:     s.Title,
 		Tags:      s.Tags,
 		Targets:   s.Targets,
+		Resolved:  s.Resolved,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
 	}
@@ -213,6 +211,17 @@ func remove(s []string, v string) []string {
 	return out
 }
 
+func splitTags(s string) []string {
+	var tags []string
+	for _, t := range strings.Split(s, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
 func parseInt(s string) (int, bool) {
 	n := 0
 	neg := false
@@ -235,6 +244,3 @@ func parseInt(s string) (int, bool) {
 	}
 	return n, true
 }
-
-// Ensure time import is used
-var _ = time.Time{}
