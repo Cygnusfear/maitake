@@ -1,3 +1,5 @@
 {"id":"mai-t9cn","kind":"ticket","type":"task","title":"mai init registers repo in ~/.maitake/repos","priority":2,"tags":["init","daemon"],"body":"When mai init runs, append the repo root path to ~/.maitake/repos (if not already there). The daemon reads this to know which repos to watch.","timestamp":"2026-03-28T20:55:39Z","branch":"main"}
 
 {"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-t9cn"}}],"body":"Done. Daemon watches repos, any mai invocation registers repo.","timestamp":"2026-03-28T21:06:41Z","branch":"main"}
+
+{"kind":"event","field":"links","value":"+mai-zchu","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-t9cn"}}],"timestamp":"2026-03-28T21:27:45Z","branch":"main"}
