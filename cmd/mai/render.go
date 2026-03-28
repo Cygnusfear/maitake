@@ -90,7 +90,7 @@ func printSummaryFromState(s *notes.State) {
 	printSummaryLine(summary)
 }
 
-func printContextLine(s *notes.State) {
+func printContextLine(s *notes.State, forPath string) {
 	resolved := ""
 	if s.Resolved != nil {
 		if *s.Resolved {
@@ -101,7 +101,6 @@ func printContextLine(s *notes.State) {
 	}
 	fmt.Printf("%s [%s] (%s) %s%s\n", s.ID, s.Kind, s.Status, s.Title, resolved)
 	if s.Body != "" {
-		// Show first 2 lines of body indented
 		lines := strings.Split(s.Body, "\n")
 		max := 2
 		if len(lines) < max {
@@ -111,5 +110,26 @@ func printContextLine(s *notes.State) {
 			fmt.Printf("  %s\n", line)
 		}
 	}
+
+	// Show file-located comments for this path
+	for _, c := range s.Comments {
+		if c.Location != nil && c.Location.Path == forPath {
+			loc := c.Location.Path
+			if c.Location.Range != nil && c.Location.Range.StartLine > 0 {
+				loc = fmt.Sprintf("%s:%d", loc, c.Location.Range.StartLine)
+				if c.Location.Range.EndLine > 0 {
+					loc = fmt.Sprintf("%s-%d", loc, c.Location.Range.EndLine)
+				}
+			}
+			fmt.Printf("  📌 %s: %s\n", loc, firstLine(c.Body))
+		}
+	}
 	fmt.Println()
+}
+
+func firstLine(s string) string {
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		return s[:idx]
+	}
+	return s
 }

@@ -135,27 +135,67 @@ func runClose(e notes.Engine, args []string) {
 
 func runAddNote(e notes.Engine, args []string) {
 	if len(args) < 1 {
-		fatal("usage: mai add-note <id> [text]")
+		fatal("usage: mai add-note <id> [--file path] [--line N] [text]")
 	}
 	id := args[0]
+	remaining := args[1:]
+
+	// Parse --file and --line flags
+	var filePath string
+	var startLine, endLine uint32
+	var positional []string
+	for i := 0; i < len(remaining); i++ {
+		switch remaining[i] {
+		case "--file", "-f":
+			i++
+			if i < len(remaining) {
+				filePath = remaining[i]
+			}
+		case "--line", "-l":
+			i++
+			if i < len(remaining) {
+				fmt.Sscanf(remaining[i], "%d", &startLine)
+			}
+		case "--end-line":
+			i++
+			if i < len(remaining) {
+				fmt.Sscanf(remaining[i], "%d", &endLine)
+			}
+		default:
+			positional = append(positional, remaining[i])
+		}
+	}
+
 	body := ""
-	if len(args) > 1 {
-		body = strings.Join(args[1:], " ")
+	if len(positional) > 0 {
+		body = strings.Join(positional, " ")
 	} else {
-		// Read from stdin
 		buf, _ := os.ReadFile("/dev/stdin")
 		body = string(buf)
 	}
 
-	_, err := e.Append(notes.AppendOptions{
+	opts := notes.AppendOptions{
 		TargetID: id,
 		Kind:     "comment",
 		Body:     body,
-	})
+	}
+
+	if filePath != "" {
+		opts.Location = &notes.Location{Path: filePath}
+		if startLine > 0 {
+			opts.Location.Range = &notes.Range{StartLine: startLine, EndLine: endLine}
+		}
+	}
+
+	_, err := e.Append(opts)
 	if err != nil {
 		fatal("add-note: %v", err)
 	}
-	fmt.Printf("Comment added to %s\n", id)
+	if filePath != "" {
+		fmt.Printf("Comment added to %s on %s\n", id, filePath)
+	} else {
+		fmt.Printf("Comment added to %s\n", id)
+	}
 }
 
 func runTag(e notes.Engine, args []string) {
@@ -240,7 +280,7 @@ func runContext(e notes.Engine, args []string) {
 	}
 	fmt.Printf("=== %s ===\n\n", args[0])
 	for _, s := range states {
-		printContextLine(&s)
+		printContextLine(&s, args[0])
 	}
 }
 

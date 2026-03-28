@@ -106,7 +106,7 @@ Lifecycle:
   start <id>                 Status → in_progress
   close <id> [-m message]    Status → closed
   reopen <id>                Status → open
-  add-note <id> [text]       Append comment
+  add-note <id> [text]       Append comment (--file path, --line N for file-level)
   tag <id> +tag / -tag       Add or remove tag
   assign <id> <name>         Set assignee
   dep <id> <dep-id>          Add dependency

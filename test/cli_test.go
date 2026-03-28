@@ -463,6 +463,87 @@ func TestCLI_Init(t *testing.T) {
 	}
 }
 
+// === FILE-LOCATED COMMENTS ===
+
+func TestCLI_FileLocatedComment(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Ticket targeting two files
+	id := mai(t, dir, "ticket", "Auth hardening", "--target", "src/auth.ts", "--target", "src/http.ts")
+
+	// Add file-specific comments
+	mai(t, dir, "add-note", id, "--file", "src/auth.ts", "Add mutex around token refresh")
+	mai(t, dir, "add-note", id, "--file", "src/http.ts", "Add backoff to retry logic")
+	mai(t, dir, "add-note", id, "General progress comment")
+
+	// Show should have all 3 comments
+	out := mai(t, dir, "show", id)
+	if !strings.Contains(out, "mutex") {
+		t.Errorf("show missing auth comment:\n%s", out)
+	}
+	if !strings.Contains(out, "backoff") {
+		t.Errorf("show missing http comment:\n%s", out)
+	}
+	if !strings.Contains(out, "General progress") {
+		t.Errorf("show missing general comment:\n%s", out)
+	}
+
+	// Context for auth.ts should show the ticket + the auth-specific comment
+	authCtx := mai(t, dir, "context", "src/auth.ts")
+	if !strings.Contains(authCtx, id) {
+		t.Errorf("auth context should show ticket:\n%s", authCtx)
+	}
+	if !strings.Contains(authCtx, "mutex") {
+		t.Errorf("auth context should show auth comment:\n%s", authCtx)
+	}
+	if strings.Contains(authCtx, "backoff") {
+		t.Errorf("auth context should NOT show http comment:\n%s", authCtx)
+	}
+
+	// Context for http.ts should show the ticket + the http-specific comment
+	httpCtx := mai(t, dir, "context", "src/http.ts")
+	if !strings.Contains(httpCtx, "backoff") {
+		t.Errorf("http context should show http comment:\n%s", httpCtx)
+	}
+	if strings.Contains(httpCtx, "mutex") {
+		t.Errorf("http context should NOT show auth comment:\n%s", httpCtx)
+	}
+}
+
+func TestCLI_FileLocatedComment_LineLevel(t *testing.T) {
+	dir := setupTestRepo(t)
+	id := mai(t, dir, "ticket", "Line level test", "--target", "src/auth.ts")
+
+	mai(t, dir, "add-note", id, "--file", "src/auth.ts", "--line", "42", "Race condition on this line")
+
+	authCtx := mai(t, dir, "context", "src/auth.ts")
+	if !strings.Contains(authCtx, ":42") {
+		t.Errorf("context should show line number:\n%s", authCtx)
+	}
+	if !strings.Contains(authCtx, "Race condition") {
+		t.Errorf("context should show comment body:\n%s", authCtx)
+	}
+}
+
+func TestCLI_FileLocatedComment_TicketWithoutTarget(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Ticket with NO file target
+	id := mai(t, dir, "ticket", "General task")
+
+	// But add a file-specific comment
+	mai(t, dir, "add-note", id, "--file", "src/auth.ts", "This file needs attention")
+
+	// Context for auth.ts should pick up the ticket because of the located comment
+	authCtx := mai(t, dir, "context", "src/auth.ts")
+	if !strings.Contains(authCtx, "General task") {
+		t.Errorf("context should show ticket with file-located comment:\n%s", authCtx)
+	}
+	if !strings.Contains(authCtx, "needs attention") {
+		t.Errorf("context should show the comment:\n%s", authCtx)
+	}
+}
+
 // === TAG REMOVAL ===
 
 func TestCLI_TagAddRemove(t *testing.T) {

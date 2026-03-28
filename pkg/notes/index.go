@@ -173,28 +173,68 @@ func (idx *Index) QueryList(opts ListOptions) []StateSummary {
 }
 
 // ContextForPath returns all open states targeting the given file path.
+// Also includes notes that have comments with Location.Path matching the path,
+// even if the note itself targets a different (or no) file.
 func (idx *Index) ContextForPath(path string) []*State {
-	ids := idx.ByTarget[path]
+	seen := make(map[string]bool)
 	var results []*State
-	for _, id := range ids {
+
+	// Notes directly targeting this path
+	for _, id := range idx.ByTarget[path] {
 		state := idx.States[id]
-		if state != nil && state.Status != "closed" {
+		if state != nil && state.Status != "closed" && !seen[id] {
+			seen[id] = true
 			results = append(results, state)
 		}
 	}
+
+	// Notes with file-located comments on this path
+	for id, state := range idx.States {
+		if seen[id] || state.Status == "closed" {
+			continue
+		}
+		if stateHasLocationOnPath(state, path) {
+			seen[id] = true
+			results = append(results, state)
+		}
+	}
+
 	return results
 }
 
 // ContextAllForPath returns all states targeting the given file path (open + closed).
 func (idx *Index) ContextAllForPath(path string) []*State {
-	ids := idx.ByTarget[path]
+	seen := make(map[string]bool)
 	var results []*State
-	for _, id := range ids {
-		if state := idx.States[id]; state != nil {
+
+	for _, id := range idx.ByTarget[path] {
+		if state := idx.States[id]; state != nil && !seen[id] {
+			seen[id] = true
 			results = append(results, state)
 		}
 	}
+
+	for id, state := range idx.States {
+		if seen[id] {
+			continue
+		}
+		if stateHasLocationOnPath(state, path) {
+			seen[id] = true
+			results = append(results, state)
+		}
+	}
+
 	return results
+}
+
+// stateHasLocationOnPath checks if any comment in the state has a Location targeting the path.
+func stateHasLocationOnPath(state *State, path string) bool {
+	for _, c := range state.Comments {
+		if c.Location != nil && c.Location.Path == path {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveID finds a note by full or partial ID.
