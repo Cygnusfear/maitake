@@ -74,7 +74,7 @@ func (repo *GitRepo) runGitCommand(args ...string) (string, error) {
 		if stderr == "" {
 			stderr = "Error running git command: " + strings.Join(args, " ")
 		}
-		err = fmt.Errorf(stderr)
+		err = fmt.Errorf("%s", stderr)
 	}
 	return stdout, err
 }
@@ -89,7 +89,7 @@ func (repo *GitRepo) runGitCommandWithEnv(env []string, args ...string) (string,
 		if stderrStr == "" {
 			stderrStr = "Error running git command: " + strings.Join(args, " ")
 		}
-		err = fmt.Errorf(stderrStr)
+		err = fmt.Errorf("%s", stderrStr)
 	}
 	return strings.TrimSpace(stdout.String()), err
 }
@@ -126,8 +126,8 @@ func (repo *GitRepo) HasRef(ref string) (bool, error) {
 }
 
 // HasObject returns whether or not the repo contains an object with the given hash.
-func (repo *GitRepo) HasObject(hash string) (bool, error) {
-	_, err := repo.runGitCommand("cat-file", "-e", hash)
+func (repo *GitRepo) HasObject(oid OID) (bool, error) {
+	_, err := repo.runGitCommand("cat-file", "-e", string(oid))
 	if err == nil {
 		// We verified the object exists
 		return true, nil
@@ -185,14 +185,14 @@ func (repo *GitRepo) HasUncommittedChanges() (bool, error) {
 }
 
 // VerifyCommit verifies that the supplied hash points to a known commit.
-func (repo *GitRepo) VerifyCommit(hash string) error {
-	out, err := repo.runGitCommand("cat-file", "-t", hash)
+func (repo *GitRepo) VerifyCommit(oid OID) error {
+	out, err := repo.runGitCommand("cat-file", "-t", string(oid))
 	if err != nil {
 		return err
 	}
 	objectType := strings.TrimSpace(string(out))
 	if objectType != "commit" {
-		return fmt.Errorf("Hash %q points to a non-commit object of type %q", hash, objectType)
+		return fmt.Errorf("Hash %q points to a non-commit object of type %q", oid, objectType)
 	}
 	return nil
 }
@@ -209,8 +209,9 @@ func (repo *GitRepo) GetHeadRef() (string, error) {
 }
 
 // GetCommitHash returns the hash of the commit pointed to by the given ref.
-func (repo *GitRepo) GetCommitHash(ref string) (string, error) {
-	return repo.runGitCommand("show", "-s", "--format=%H", ref)
+func (repo *GitRepo) GetCommitHash(ref string) (OID, error) {
+	out, err := repo.runGitCommand("show", "-s", "--format=%H", ref)
+	return OID(out), err
 }
 
 // ResolveRefCommit returns the commit pointed to by the given ref, which may be a remote ref.
@@ -222,7 +223,7 @@ func (repo *GitRepo) GetCommitHash(ref string) (string, error) {
 // This method should be used when a command may be performed by either the reviewer or the
 // reviewee, while GetCommitHash should be used when the encompassing command should only be
 // performed by the reviewee.
-func (repo *GitRepo) ResolveRefCommit(ref string) (string, error) {
+func (repo *GitRepo) ResolveRefCommit(ref string) (OID, error) {
 	if err := repo.VerifyGitRef(ref); err == nil {
 		return repo.GetCommitHash(ref)
 	}
@@ -354,7 +355,7 @@ func (repo *GitRepo) mergeArchives(archive, remoteArchive string) error {
 	}
 	if !hasLocal {
 		// The local archive does not exist, so we merely need to set it
-		_, err := repo.runGitCommand("update-ref", archive, remoteHash)
+		_, err := repo.runGitCommand("update-ref", archive, string(remoteHash))
 		return err
 	}
 	archiveHash, err := repo.GetCommitHash(archive)
@@ -362,13 +363,13 @@ func (repo *GitRepo) mergeArchives(archive, remoteArchive string) error {
 		return err
 	}
 
-	isAncestor, err := repo.IsAncestor(archiveHash, remoteHash)
+	isAncestor, err := repo.IsAncestor(string(archiveHash), string(remoteHash))
 	if err != nil {
 		return err
 	}
 	if isAncestor {
 		// The archive can simply be fast-forwarded
-		_, err := repo.runGitCommand("update-ref", archive, remoteHash, archiveHash)
+		_, err := repo.runGitCommand("update-ref", archive, string(remoteHash), string(archiveHash))
 		return err
 	}
 
@@ -377,12 +378,12 @@ func (repo *GitRepo) mergeArchives(archive, remoteArchive string) error {
 	if err != nil {
 		return err
 	}
-	newArchiveHash, err := repo.runGitCommand("commit-tree", "-p", remoteHash, "-p", archiveHash, "-m", "Merge local and remote archives", refDetails.Tree)
+	newArchiveHash, err := repo.runGitCommand("commit-tree", "-p", string(remoteHash), "-p", string(archiveHash), "-m", "Merge local and remote archives", refDetails.Tree)
 	if err != nil {
 		return err
 	}
 	newArchiveHash = strings.TrimSpace(newArchiveHash)
-	_, err = repo.runGitCommand("update-ref", archive, newArchiveHash, archiveHash)
+	_, err = repo.runGitCommand("update-ref", archive, newArchiveHash, string(archiveHash))
 	return err
 }
 
@@ -410,23 +411,23 @@ func (repo *GitRepo) ArchiveRef(ref, archive string) error {
 	if err != nil {
 		archiveHash = ""
 	} else {
-		if isAncestor, err := repo.IsAncestor(refHash, archiveHash); err != nil {
+		if isAncestor, err := repo.IsAncestor(string(refHash), string(archiveHash)); err != nil {
 			return err
 		} else if isAncestor {
 			// The ref has already been archived, so we have nothing to do
 			return nil
 		}
-		commitTreeArgs = append(commitTreeArgs, "-p", archiveHash)
+		commitTreeArgs = append(commitTreeArgs, "-p", string(archiveHash))
 	}
-	commitTreeArgs = append(commitTreeArgs, "-p", refHash, "-m", fmt.Sprintf("Archive %s", refHash), refDetails.Tree)
+	commitTreeArgs = append(commitTreeArgs, "-p", string(refHash), "-m", fmt.Sprintf("Archive %s", refHash), refDetails.Tree)
 	newArchiveHash, err := repo.runGitCommand(commitTreeArgs...)
 	if err != nil {
 		return err
 	}
 	newArchiveHash = strings.TrimSpace(newArchiveHash)
 	updateRefArgs := []string{"update-ref", archive, newArchiveHash}
-	if archiveHash != "" {
-		updateRefArgs = append(updateRefArgs, archiveHash)
+	if string(archiveHash) != "" {
+		updateRefArgs = append(updateRefArgs, string(archiveHash))
 	}
 	_, err = repo.runGitCommand(updateRefArgs...)
 	return err
@@ -534,7 +535,7 @@ func (repo *GitRepo) ListCommitsBetween(from, to string) ([]string, error) {
 }
 
 // StoreBlob writes the given file to the repository and returns its hash.
-func (repo *GitRepo) StoreBlob(contents string) (string, error) {
+func (repo *GitRepo) StoreBlob(contents string) (OID, error) {
 	stdin := strings.NewReader(contents)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -544,7 +545,7 @@ func (repo *GitRepo) StoreBlob(contents string) (string, error) {
 		message := strings.TrimSpace(stderr.String())
 		return "", fmt.Errorf("failure storing a git blob, %v: %q", err, message)
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return OID(strings.TrimSpace(stdout.String())), nil
 }
 
 // StoreTree writes the given file tree to the repository and returns its hash.
@@ -676,9 +677,9 @@ func (repo *GitRepo) SetRef(ref, newCommitHash, previousCommitHash string) error
 }
 
 // GetNotes uses the "git" command-line tool to read the notes from the given ref for a given revision.
-func (repo *GitRepo) GetNotes(notesRef, revision string) []Note {
+func (repo *GitRepo) GetNotes(ref NotesRef, revision OID) []Note {
 	var notes []Note
-	rawNotes, err := repo.runGitCommand("notes", "--ref", notesRef, "show", revision)
+	rawNotes, err := repo.runGitCommand("notes", "--ref", string(ref), "show", string(revision))
 	if err != nil {
 		// We just assume that this means there are no notes
 		return nil
@@ -804,10 +805,10 @@ type notesOverview struct {
 }
 
 // notesOverview returns an overview of the git notes stored under the given ref.
-func (repo *GitRepo) notesOverview(notesRef string) (*notesOverview, error) {
+func (repo *GitRepo) notesOverview(ref NotesRef) (*notesOverview, error) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if err := repo.runGitCommandWithIO(nil, &stdout, &stderr, "notes", "--ref", notesRef, "list"); err != nil {
+	if err := repo.runGitCommandWithIO(nil, &stdout, &stderr, "notes", "--ref", string(ref), "list"); err != nil {
 		return nil, err
 	}
 
@@ -874,7 +875,7 @@ func (overview *notesOverview) getNoteContentsMap(repo *GitRepo) (map[string][]b
 // The returned value is a mapping from commit hash to the list of notes for that commit.
 //
 // This is the batch version of the corresponding GetNotes(...) method.
-func (repo *GitRepo) GetAllNotes(notesRef string) (map[string][]Note, error) {
+func (repo *GitRepo) GetAllNotes(ref NotesRef) (map[OID][]Note, error) {
 	// This code is unfortunately quite complicated, but it needs to be so.
 	//
 	// Conceptually, this is equivalent to:
@@ -898,7 +899,7 @@ func (repo *GitRepo) GetAllNotes(notesRef string) (map[string][]Note, error) {
 	//  1. One to list all the annotated objects (and their notes hash)
 	//  2. A second one to filter out all of the annotated objects that are not commits.
 	//  3. A final one to get the contents of all of the notes blobs.
-	overview, err := repo.notesOverview(notesRef)
+	overview, err := repo.notesOverview(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -910,7 +911,7 @@ func (repo *GitRepo) GetAllNotes(notesRef string) (map[string][]Note, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Failure building the mapping from notes hash to contents: %v", err)
 	}
-	commitNotesMap := make(map[string][]Note)
+	commitNotesMap := make(map[OID][]Note)
 	for _, notesMapping := range overview.NotesMappings {
 		if !isCommit[*notesMapping.ObjectHash] {
 			continue
@@ -921,22 +922,22 @@ func (repo *GitRepo) GetAllNotes(notesRef string) (map[string][]Note, error) {
 		for _, slice := range byteSlices {
 			notes = append(notes, Note(slice))
 		}
-		commitNotesMap[*notesMapping.ObjectHash] = notes
+		commitNotesMap[OID(*notesMapping.ObjectHash)] = notes
 	}
 
 	return commitNotesMap, nil
 }
 
 // AppendNote appends a note to a revision under the given ref.
-func (repo *GitRepo) AppendNote(notesRef, revision string, note Note) error {
-	_, err := repo.runGitCommand("notes", "--ref", notesRef, "append", "-m", string(note), revision)
+func (repo *GitRepo) AppendNote(ref NotesRef, revision OID, note Note) error {
+	_, err := repo.runGitCommand("notes", "--ref", string(ref), "append", "-m", string(note), string(revision))
 	return err
 }
 
 // ListNotedRevisions returns the collection of revisions that are annotated by notes in the given ref.
-func (repo *GitRepo) ListNotedRevisions(notesRef string) []string {
-	var revisions []string
-	notesListOut, err := repo.runGitCommand("notes", "--ref", notesRef, "list")
+func (repo *GitRepo) ListNotedRevisions(ref NotesRef) []OID {
+	var revisions []OID
+	notesListOut, err := repo.runGitCommand("notes", "--ref", string(ref), "list")
 	if err != nil {
 		return nil
 	}
@@ -949,7 +950,7 @@ func (repo *GitRepo) ListNotedRevisions(notesRef string) []string {
 			// If a note points to an object that we do not know about (yet), then err will not
 			// be nil. We can safely just ignore those notes.
 			if err == nil && objType == "commit" {
-				revisions = append(revisions, objHash)
+				revisions = append(revisions, OID(objHash))
 			}
 		}
 	}

@@ -76,7 +76,8 @@ func (b *Blob) Store(repo Repo) (string, error) {
 	if savedHash := b.savedHashes[repo]; savedHash != "" {
 		return savedHash, nil
 	}
-	savedHash, err := repo.StoreBlob(b.Contents())
+	oid, err := repo.StoreBlob(b.Contents())
+	savedHash := string(oid)
 	if err == nil && savedHash != "" {
 		b.savedHashes[repo] = savedHash
 	}
@@ -164,10 +165,10 @@ type Repo interface {
 	HasRef(ref string) (bool, error)
 
 	// HasObject returns whether or not the repo contains an object with the given hash.
-	HasObject(hash string) (bool, error)
+	HasObject(oid OID) (bool, error)
 
 	// VerifyCommit verifies that the supplied hash points to a known commit.
-	VerifyCommit(hash string) error
+	VerifyCommit(oid OID) error
 
 	// VerifyGitRef verifies that the supplied ref points to a known commit.
 	VerifyGitRef(ref string) error
@@ -176,7 +177,7 @@ type Repo interface {
 	GetHeadRef() (string, error)
 
 	// GetCommitHash returns the hash of the commit pointed to by the given ref.
-	GetCommitHash(ref string) (string, error)
+	GetCommitHash(ref string) (OID, error)
 
 	// ResolveRefCommit returns the commit pointed to by the given ref, which may be a remote ref.
 	//
@@ -187,7 +188,7 @@ type Repo interface {
 	// This method should be used when a command may be performed by either the reviewer or the
 	// reviewee, while GetCommitHash should be used when the encompassing command should only be
 	// performed by the reviewee.
-	ResolveRefCommit(ref string) (string, error)
+	ResolveRefCommit(ref string) (OID, error)
 
 	// GetCommitMessage returns the message stored in the commit pointed to by the given ref.
 	GetCommitMessage(ref string) (string, error)
@@ -275,7 +276,7 @@ type Repo interface {
 	ListCommitsBetween(from, to string) ([]string, error)
 
 	// StoreBlob writes the given file contents to the repository and returns its hash.
-	StoreBlob(contents string) (string, error)
+	StoreBlob(contents string) (OID, error)
 
 	// StoreTree writes the given file tree contents to the repository and returns its hash.
 	StoreTree(contents map[string]TreeChild) (string, error)
@@ -294,20 +295,20 @@ type Repo interface {
 	SetRef(ref, newCommitHash, previousCommitHash string) error
 
 	// GetNotes reads the notes from the given ref that annotate the given revision.
-	GetNotes(notesRef, revision string) []Note
+	GetNotes(ref NotesRef, revision OID) []Note
 
 	// GetAllNotes reads the contents of the notes under the given ref for every commit.
 	//
 	// The returned value is a mapping from commit hash to the list of notes for that commit.
 	//
 	// This is the batch version of the corresponding GetNotes(...) method.
-	GetAllNotes(notesRef string) (map[string][]Note, error)
+	GetAllNotes(ref NotesRef) (map[OID][]Note, error)
 
 	// AppendNote appends a note to a revision under the given ref.
-	AppendNote(ref, revision string, note Note) error
+	AppendNote(ref NotesRef, revision OID, note Note) error
 
 	// ListNotedRevisions returns the collection of revisions that are annotated by notes in the given ref.
-	ListNotedRevisions(notesRef string) []string
+	ListNotedRevisions(ref NotesRef) []OID
 
 	// Remotes returns a list of the remotes.
 	Remotes() ([]string, error)
