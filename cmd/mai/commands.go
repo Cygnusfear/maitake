@@ -69,13 +69,25 @@ func runList(e notes.Engine, args []string) {
 	}
 
 	f, _ := parseFlags(args)
+
+	// Default: show open + in_progress (the work queue)
+	// --status=closed or --status=all to see others
+	status := f.status
+	showAll := status == "all"
+	if status == "" {
+		status = "" // we'll filter manually for open + in_progress
+	}
+	if showAll {
+		status = ""
+	}
+
 	opts := notes.ListOptions{
 		FindOptions: notes.FindOptions{
 			Kind:   f.kind,
-			Status: f.status,
+			Status: status,
 			Tag:    "",
 		},
-		SortBy: "created",
+		SortBy: "priority",
 	}
 	if len(f.tags) > 0 {
 		opts.FindOptions.Tag = f.tags[0]
@@ -87,6 +99,12 @@ func runList(e notes.Engine, args []string) {
 	}
 
 	for _, s := range summaries {
+		// Default filter: open + in_progress only
+		if !showAll && f.status == "" {
+			if s.Status != "open" && s.Status != "in_progress" {
+				continue
+			}
+		}
 		printSummaryLine(s)
 	}
 }
@@ -246,6 +264,88 @@ func runDep(e notes.Engine, args []string) {
 	fmt.Printf("%s depends on %s\n", args[0], args[1])
 }
 
+func runUndep(e notes.Engine, args []string) {
+	if len(args) < 2 {
+		fatal("usage: mai undep <id> <dep-id>")
+	}
+	_, err := e.Append(notes.AppendOptions{
+		TargetID: args[0],
+		Kind:     "event",
+		Field:    "deps",
+		Value:    "-" + args[1],
+	})
+	if err != nil {
+		fatal("undep: %v", err)
+	}
+	fmt.Printf("%s no longer depends on %s\n", args[0], args[1])
+}
+
+func runDepTree(e notes.Engine, args []string) {
+	if len(args) < 1 {
+		fatal("usage: mai dep tree <id>")
+	}
+	state, err := e.Fold(args[0])
+	if err != nil {
+		fatal("dep tree: %v", err)
+	}
+	printDepTree(e, state, "", true)
+}
+
+func printDepTree(e notes.Engine, state *notes.State, prefix string, isRoot bool) {
+	status := state.Status
+	title := state.Title
+	if title == "" {
+		title = "(no title)"
+	}
+
+	if isRoot {
+		fmt.Printf("%s [%s] %s\n", state.ID, status, title)
+	}
+
+	for i, depID := range state.Deps {
+		isLast := i == len(state.Deps)-1
+		connector := "├── "
+		childPrefix := prefix + "│   "
+		if isLast {
+			connector = "└── "
+			childPrefix = prefix + "    "
+		}
+
+		depState, err := e.Fold(depID)
+		if err != nil {
+			fmt.Printf("%s%s%s [not found]\n", prefix, connector, depID)
+			continue
+		}
+		depTitle := depState.Title
+		if depTitle == "" {
+			depTitle = "(no title)"
+		}
+		fmt.Printf("%s%s%s [%s] %s\n", prefix, connector, depState.ID, depState.Status, depTitle)
+		if len(depState.Deps) > 0 {
+			printDepTree(e, depState, childPrefix, false)
+		}
+	}
+}
+
+func runUnlink(e notes.Engine, args []string) {
+	if len(args) < 2 {
+		fatal("usage: mai unlink <id> <id>")
+	}
+	e.Append(notes.AppendOptions{
+		TargetID: args[0],
+		Kind:     "event",
+		Field:    "links",
+		Value:    "-" + args[1],
+	})
+	e.Append(notes.AppendOptions{
+		TargetID: args[1],
+		Kind:     "event",
+		Field:    "links",
+		Value:    "-" + args[0],
+	})
+	fmt.Printf("%s ↔ %s removed\n", args[0], args[1])
+}
+
 func runLink(e notes.Engine, args []string) {
 	if len(args) < 2 {
 		fatal("usage: mai link <id> <id>")
@@ -315,6 +415,28 @@ func runDoctor(e notes.Engine) {
 	fmt.Println("By status:")
 	for status, count := range report.ByStatus {
 		fmt.Printf("  %-16s %d\n", status, count)
+	}
+}
+
+func runClosed(e notes.Engine, args []string) {
+	f, _ := parseFlags(args)
+	opts := notes.ListOptions{
+		FindOptions: notes.FindOptions{
+			Kind:   f.kind,
+			Status: "closed",
+		},
+		SortBy: "created",
+		Limit:  20,
+	}
+	if len(f.tags) > 0 {
+		opts.FindOptions.Tag = f.tags[0]
+	}
+	summaries, err := e.List(opts)
+	if err != nil {
+		fatal("closed: %v", err)
+	}
+	for _, s := range summaries {
+		printSummaryLine(s)
 	}
 }
 

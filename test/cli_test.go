@@ -434,6 +434,89 @@ func TestCLI_StartNonexistent(t *testing.T) {
 	}
 }
 
+// === DEP TREE / UNDEP / UNLINK ===
+
+func TestCLI_DepTree(t *testing.T) {
+	dir := setupTestRepo(t)
+	a := mai(t, dir, "ticket", "Root task")
+	b := mai(t, dir, "ticket", "Child task")
+	c := mai(t, dir, "ticket", "Grandchild")
+	mai(t, dir, "dep", a, b)
+	mai(t, dir, "dep", b, c)
+
+	out := mai(t, dir, "dep", "tree", a)
+	if !strings.Contains(out, a) {
+		t.Errorf("tree should show root:\n%s", out)
+	}
+	if !strings.Contains(out, b) {
+		t.Errorf("tree should show child:\n%s", out)
+	}
+	if !strings.Contains(out, c) {
+		t.Errorf("tree should show grandchild:\n%s", out)
+	}
+	if !strings.Contains(out, "└──") {
+		t.Errorf("tree should have connectors:\n%s", out)
+	}
+}
+
+func TestCLI_Undep(t *testing.T) {
+	dir := setupTestRepo(t)
+	a := mai(t, dir, "ticket", "Parent")
+	b := mai(t, dir, "ticket", "Dep")
+	mai(t, dir, "dep", a, b)
+
+	blocked := mai(t, dir, "blocked")
+	if !strings.Contains(blocked, a) {
+		t.Errorf("should be blocked before undep:\n%s", blocked)
+	}
+
+	mai(t, dir, "undep", a, b)
+
+	ready := mai(t, dir, "ready")
+	if !strings.Contains(ready, a) {
+		t.Errorf("should be ready after undep:\n%s", ready)
+	}
+}
+
+func TestCLI_Unlink(t *testing.T) {
+	dir := setupTestRepo(t)
+	a := mai(t, dir, "ticket", "A")
+	b := mai(t, dir, "ticket", "B")
+	mai(t, dir, "link", a, b)
+
+	out := mai(t, dir, "show", a)
+	if !strings.Contains(out, b) {
+		t.Errorf("should show link:\n%s", out)
+	}
+
+	mai(t, dir, "unlink", a, b)
+
+	out = mai(t, dir, "show", a)
+	if strings.Contains(out, "links: "+b) {
+		t.Errorf("link should be removed:\n%s", out)
+	}
+}
+
+func TestCLI_DefaultLsShowsOnlyOpen(t *testing.T) {
+	dir := setupTestRepo(t)
+	open := mai(t, dir, "ticket", "Open one")
+	closed := mai(t, dir, "ticket", "Will close")
+	mai(t, dir, "close", closed)
+
+	out := mai(t, dir, "ls")
+	if !strings.Contains(out, open) {
+		t.Errorf("ls should show open ticket:\n%s", out)
+	}
+	if strings.Contains(out, closed) {
+		t.Errorf("ls should NOT show closed ticket:\n%s", out)
+	}
+
+	out = mai(t, dir, "ls", "--status=all")
+	if !strings.Contains(out, closed) {
+		t.Errorf("ls --status=all should show closed:\n%s", out)
+	}
+}
+
 // === PARTIAL ID MATCHING ===
 
 func TestCLI_PartialIDMatch(t *testing.T) {

@@ -41,15 +41,25 @@ func main() {
 	case "assign":
 		withEngine(func(e notes.Engine) { runAssign(e, args) })
 	case "dep":
-		withEngine(func(e notes.Engine) { runDep(e, args) })
+		if len(args) > 0 && args[0] == "tree" {
+			withEngine(func(e notes.Engine) { runDepTree(e, args[1:]) })
+		} else {
+			withEngine(func(e notes.Engine) { runDep(e, args) })
+		}
+	case "undep":
+		withEngine(func(e notes.Engine) { runUndep(e, args) })
 	case "link":
 		withEngine(func(e notes.Engine) { runLink(e, args) })
+	case "unlink":
+		withEngine(func(e notes.Engine) { runUnlink(e, args) })
 	case "context":
 		withEngine(func(e notes.Engine) { runContext(e, args) })
 	case "kinds":
 		withEngine(func(e notes.Engine) { runKinds(e) })
 	case "doctor":
 		withEngine(func(e notes.Engine) { runDoctor(e) })
+	case "closed":
+		withEngine(func(e notes.Engine) { runClosed(e, args) })
 	case "ready":
 		withEngine(func(e notes.Engine) { runReady(e, args) })
 	case "blocked":
@@ -110,11 +120,15 @@ Lifecycle:
   tag <id> +tag / -tag       Add or remove tag
   assign <id> <name>         Set assignee
   dep <id> <dep-id>          Add dependency
+  dep tree <id>              Show dependency tree
+  undep <id> <dep-id>        Remove dependency
   link <id> <id>             Symmetric link
+  unlink <id> <id>           Remove link
 
 Query:
   show <id>                  Full note state
-  ls [--status=X] [-k kind]  List notes
+  ls [--status=X] [-k kind]  List notes (default: open + in_progress)
+  closed [-k kind]           Recently closed notes
   context <path>             Everything about a file
   ready                      Open notes with deps resolved
   blocked                    Open notes with unresolved deps
