@@ -59,6 +59,8 @@ Commands:
   tag <id> <tag>          Add a tag
   assign <id> <who>       Set assignee
   priority <id> <0-4>    Set priority
+  title <id> <new title> Rename a note
+  type <id> <new type>   Change type
   edit <id> [-d body]    Update note body ($EDITOR if no -d)
   dep <id> <dep-id>       Add dependency
   link <id> <target-id>   Add link
@@ -145,6 +147,10 @@ Run 'mai <command> -h' for command-specific help.`)
 		withEngine(func(e notes.Engine) { runBlocked(e, args) })
 	case "priority":
 		withEngine(func(e notes.Engine) { runPriority(e, args) })
+	case "title":
+		withEngine(func(e notes.Engine) { runTitle(e, args) })
+	case "type":
+		withEngine(func(e notes.Engine) { runType(e, args) })
 	case "edit":
 		withEngine(func(e notes.Engine) { runEdit(e, args) })
 	// Shortcuts

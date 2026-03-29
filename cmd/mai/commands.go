@@ -417,6 +417,39 @@ func runAssign(e notes.Engine, args []string) {
 	fmt.Printf("%s assigned to %s\n", args[0], args[1])
 }
 
+func runTitle(e notes.Engine, args []string) {
+	if len(args) < 2 {
+		fatal("usage: mai title <id> <new title>")
+	}
+	title := strings.Join(args[1:], " ")
+	_, err := e.Append(notes.AppendOptions{
+		TargetID: args[0],
+		Kind:     "event",
+		Field:    "title",
+		Value:    title,
+	})
+	if err != nil {
+		fatal("title: %v", err)
+	}
+	fmt.Printf("%s → %s\n", args[0], title)
+}
+
+func runType(e notes.Engine, args []string) {
+	if len(args) < 2 {
+		fatal("usage: mai type <id> <new type>")
+	}
+	_, err := e.Append(notes.AppendOptions{
+		TargetID: args[0],
+		Kind:     "event",
+		Field:    "type",
+		Value:    args[1],
+	})
+	if err != nil {
+		fatal("type: %v", err)
+	}
+	fmt.Printf("%s → type %s\n", args[0], args[1])
+}
+
 func runPriority(e notes.Engine, args []string) {
 	if len(args) < 2 {
 		fatal("usage: mai priority <id> <0-4>")
