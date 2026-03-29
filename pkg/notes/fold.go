@@ -63,7 +63,15 @@ func FoldEvents(creation *Note, events []*Note) *State {
 	for _, ev := range sorted {
 		switch ev.Kind {
 		case "event":
-			applyEvent(state, ev)
+			// Check if this body edit targets a comment rather than the parent
+			if ev.Field == "body" && applyCommentEdit(state, ev) {
+				// handled — it targeted a comment
+			} else {
+				applyEvent(state, ev)
+				if ev.Field == "body" {
+					state.Revisions++
+				}
+			}
 		case "comment":
 			state.Comments = append(state.Comments, *ev)
 		default:
@@ -79,7 +87,42 @@ func FoldEvents(creation *Note, events []*Note) *State {
 		}
 	}
 
+	state.Edited = state.Revisions > 0
+
 	return state
+}
+
+// applyCommentEdit checks if a body edit event targets a comment (not the parent).
+// Returns true if it found and updated a comment.
+func applyCommentEdit(state *State, ev *Note) bool {
+	if ev.Field != "body" {
+		return false
+	}
+	// Find which note ID this event targets
+	targetID := ""
+	for _, e := range ev.Edges {
+		if e.Target.Kind == "note" {
+			targetID = e.Target.Ref
+			break
+		}
+	}
+	if targetID == "" || targetID == state.ID {
+		return false // targets the parent note, not a comment
+	}
+	// Look for a comment with this ID
+	for i := range state.Comments {
+		if state.Comments[i].ID == targetID {
+			body := ev.Value
+			if ev.Body != "" {
+				body = ev.Body
+			}
+			state.Comments[i].Body = body
+			state.Comments[i].Edited = true
+			state.Comments[i].Revisions++
+			return true
+		}
+	}
+	return false
 }
 
 func applyEvent(state *State, ev *Note) {

@@ -50,6 +50,10 @@ type Note struct {
 	Ref       string `json:"-"`
 	Slot      string `json:"-"`
 
+	// Edit tracking (computed during fold, not stored in git)
+	Edited    bool `json:"edited,omitempty"`    // true if body was revised
+	Revisions int  `json:"revisions,omitempty"` // number of body edits
+
 	// Parsed timestamp (computed, not stored)
 	Time time.Time `json:"-"`
 }
@@ -98,7 +102,9 @@ type State struct {
 	Events    []Note    `json:"events,omitempty"`
 	Comments  []Note    `json:"comments,omitempty"`
 	Resolved  *bool     `json:"resolved,omitempty"`
-	Branch    string    `json:"branch,omitempty"` // branch at creation time
+	Edited    bool      `json:"edited,omitempty"`    // true if body was revised
+	Revisions int       `json:"revisions,omitempty"` // number of body edits
+	Branch    string    `json:"branch,omitempty"`    // branch at creation time
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	NoteOID   string    `json:"noteOid,omitempty"`

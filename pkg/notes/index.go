@@ -15,6 +15,9 @@ type Index struct {
 	// Events/comments keyed by the target note ID they reference
 	EventsByTarget map[string][]*Note
 
+	// Comment ID → parent note ID (so comments can be resolved for editing)
+	CommentParent map[string]string
+
 	// Precomputed states
 	States map[string]*State
 
@@ -33,6 +36,7 @@ func NewIndex() *Index {
 	return &Index{
 		CreationNotes:  make(map[string]*Note),
 		EventsByTarget: make(map[string][]*Note),
+		CommentParent:  make(map[string]string),
 		States:         make(map[string]*State),
 		ByKind:         make(map[string][]string),
 		ByTarget:       make(map[string][]string),
@@ -45,14 +49,23 @@ func NewIndex() *Index {
 // Ingest adds a parsed note to the index. Call this for every note read from git.
 // After ingesting all notes, call Build() to compute states and lookup maps.
 func (idx *Index) Ingest(note *Note) {
-	if note.ID != "" {
-		// Creation note
+	// Comments and events have edges targeting a parent note.
+	// Creation notes have an ID but no parent-targeting edge.
+	targetID := noteTargetID(note)
+
+	if note.ID != "" && targetID == "" {
+		// Top-level creation note (ticket, doc, decision, etc.)
 		idx.CreationNotes[note.ID] = note
-	} else {
-		// Event or comment — find which note it targets
-		targetID := noteTargetID(note)
-		if targetID != "" {
-			idx.EventsByTarget[targetID] = append(idx.EventsByTarget[targetID], note)
+	} else if targetID != "" {
+		// Event or comment targeting a parent or comment
+		idx.EventsByTarget[targetID] = append(idx.EventsByTarget[targetID], note)
+		// If this targets a comment, also file under the parent so fold sees it
+		if parentID, ok := idx.CommentParent[targetID]; ok {
+			idx.EventsByTarget[parentID] = append(idx.EventsByTarget[parentID], note)
+		}
+		// Index comment IDs for resolution
+		if note.ID != "" {
+			idx.CommentParent[note.ID] = targetID
 		}
 	}
 }

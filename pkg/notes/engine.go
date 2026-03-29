@@ -175,12 +175,20 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	}
 
 	// Resolve target note
+	// Resolve target — may be a top-level note or a comment
 	fullID, err := e.index.ResolveID(opts.TargetID)
+	edgeTargetID := fullID // edge points at what the caller asked for
 	if err != nil {
 		return nil, fmt.Errorf("resolving target ID: %w", err)
 	}
 	if fullID == "" {
-		return nil, fmt.Errorf("note %q not found", opts.TargetID)
+		// Check if it's a comment ID — resolve to parent for storage
+		if parentID, ok := e.index.CommentParent[opts.TargetID]; ok {
+			fullID = parentID
+			edgeTargetID = opts.TargetID // edge still points at the comment
+		} else {
+			return nil, fmt.Errorf("note %q not found", opts.TargetID)
+		}
 	}
 
 	appendNow := time.Now().UTC()
@@ -202,6 +210,15 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		Branch:    e.currentGitBranch(),
 	}
 
+	// Comments get their own ID so they can be targeted by edit events
+	if opts.Kind == "comment" {
+		commentID, err := GenerateID(e.repoPath)
+		if err != nil {
+			return nil, fmt.Errorf("generating comment ID: %w", err)
+		}
+		note.ID = commentID
+	}
+
 	// Auto-add edge based on kind
 	edgeType := "updates"
 	switch opts.Kind {
@@ -218,7 +235,7 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	}
 	note.Edges = append(note.Edges, Edge{
 		Type:   edgeType,
-		Target: EdgeTarget{Kind: "note", Ref: fullID},
+		Target: EdgeTarget{Kind: "note", Ref: edgeTargetID},
 	})
 
 	// Serialize and guard
