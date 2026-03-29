@@ -150,6 +150,14 @@ Run 'mai <command> -h' for command-specific help.`)
 		withEngine(func(e notes.Engine) { runShortcut(e, "review", "", args) })
 	case "artifact":
 		withEngine(func(e notes.Engine) { runShortcut(e, "artifact", "artifact", args) })
+	case "adr":
+		if len(args) == 0 {
+			// mai adr → list decisions
+			withEngine(func(e notes.Engine) { runList(e, []string{"-k", "decision"}) })
+		} else {
+			// mai adr "title" [flags] → create decision
+			withEngine(func(e notes.Engine) { runShortcut(e, "decision", "", args) })
+		}
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -291,6 +299,7 @@ Create:
   warn <path> [message]      Shortcut: create -k warning --target <path>
   review [title] [options]   Shortcut: create -k review (open, needs response)
   artifact [title] [options] Shortcut: create -k artifact (born closed)
+  adr [title] [flags]        List decisions, or create one
 
 Lifecycle:
   start <id>                 Status → in_progress
