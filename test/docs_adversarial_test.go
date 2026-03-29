@@ -361,27 +361,142 @@ func TestDocs_IgnoresNonMarkdownFiles(t *testing.T) {
 
 // ── Frontmatter preservation ─────────────────────────────────────────────
 
+// TestDocs_ExtraFrontmatterPreserved checks that Obsidian fields survive an
+// import round-trip. The original test only verified mai-id and body content;
+// this version also asserts that the extra fields were NOT dropped.
 func TestDocs_ExtraFrontmatterPreserved(t *testing.T) {
 	dir, engine := docEngine(t)
 	docsDir := filepath.Join(dir, "docs")
 	os.MkdirAll(docsDir, 0755)
 
-	// File with extra frontmatter fields (Obsidian adds these)
-	os.WriteFile(filepath.Join(docsDir, "obsidian.md"), []byte("---\ntitle: My Note\ntags: [a, b]\ndate: 2026-03-28\n---\n# Obsidian Note\n\nWith extra frontmatter.\n"), 0644)
+	original := "---\ntitle: My Note\ntags: [a, b]\ndate: 2026-03-28\n---\n# Obsidian Note\n\nWith extra frontmatter.\n"
+	os.WriteFile(filepath.Join(docsDir, "obsidian.md"), []byte(original), 0644)
 
 	result, _ := notes.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 1 {
 		t.Fatalf("should import, got %d", len(result.Imported))
 	}
 
-	// File should now have mai-id but also the content
 	data, _ := os.ReadFile(filepath.Join(docsDir, "obsidian.md"))
 	content := string(data)
+
 	if !strings.Contains(content, "mai-id:") {
 		t.Error("should have mai-id after import")
 	}
 	if !strings.Contains(content, "Obsidian Note") {
-		t.Error("content should be preserved")
+		t.Error("body content should be preserved")
+	}
+	// Obsidian fields must survive — not dropped on first write.
+	if !strings.Contains(content, "title: My Note") {
+		t.Errorf("title field dropped after import.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "tags: [a, b]") {
+		t.Errorf("tags field dropped after import.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "date: 2026-03-28") {
+		t.Errorf("date field dropped after import.\nGot:\n%s", content)
+	}
+}
+
+// TestDocs_TagsAliasesCssclassesPreserved verifies that tags, aliases,
+// and cssclasses (Obsidian-specific fields) survive a full sync round-trip.
+func TestDocs_TagsAliasesCssclassesPreserved(t *testing.T) {
+	dir, engine := docEngine(t)
+	docsDir := filepath.Join(dir, "docs")
+	os.MkdirAll(docsDir, 0755)
+
+	original := "---\ntags:\n  - project\n  - active\naliases:\n  - myalias\ncssclasses:\n  - fancy\n---\n# Tagged Note\n\nContent here.\n"
+	os.WriteFile(filepath.Join(docsDir, "tagged.md"), []byte(original), 0644)
+
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	// Do a second sync (simulates note update propagation).
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	data, _ := os.ReadFile(filepath.Join(docsDir, "tagged.md"))
+	content := string(data)
+
+	if !strings.Contains(content, "tags:") {
+		t.Errorf("tags block dropped.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "aliases:") {
+		t.Errorf("aliases block dropped.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "cssclasses:") {
+		t.Errorf("cssclasses block dropped.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "mai-id:") {
+		t.Errorf("mai-id missing after sync.\nGot:\n%s", content)
+	}
+}
+
+// TestDocs_UnknownFrontmatterFieldsSurvive verifies that arbitrary unknown
+// fields in the frontmatter are preserved through an import + body-update cycle.
+func TestDocs_UnknownFrontmatterFieldsSurvive(t *testing.T) {
+	dir, engine := docEngine(t)
+	docsDir := filepath.Join(dir, "docs")
+	os.MkdirAll(docsDir, 0755)
+
+	original := "---\nmy-custom-field: hello\nanother_field: 42\n---\n# Unknown Fields\n\nOriginal content.\n"
+	os.WriteFile(filepath.Join(docsDir, "unknown.md"), []byte(original), 0644)
+
+	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	if len(result.Imported) != 1 {
+		t.Fatalf("should import, got %d", len(result.Imported))
+	}
+
+	// Get the imported note ID, then update the note body.
+	summaries, _ := engine.List(notes.ListOptions{FindOptions: notes.FindOptions{Kind: "doc"}})
+	if len(summaries) != 1 {
+		t.Fatal("doc note not imported")
+	}
+	engine.Append(notes.AppendOptions{
+		TargetID: summaries[0].ID,
+		Kind:     "event",
+		Field:    "body",
+		Body:     "# Unknown Fields\n\nUpdated content.\n",
+	})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	data, _ := os.ReadFile(filepath.Join(docsDir, "unknown.md"))
+	content := string(data)
+
+	if !strings.Contains(content, "my-custom-field: hello") {
+		t.Errorf("custom field dropped after body update.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "another_field: 42") {
+		t.Errorf("another_field dropped after body update.\nGot:\n%s", content)
+	}
+}
+
+// TestDocs_AddMaiIdToExistingFrontmatter verifies that importing a file that
+// already has frontmatter (but no mai-id) adds mai-id without destroying the
+// existing fields.
+func TestDocs_AddMaiIdToExistingFrontmatter(t *testing.T) {
+	dir, engine := docEngine(t)
+	docsDir := filepath.Join(dir, "docs")
+	os.MkdirAll(docsDir, 0755)
+
+	// File has frontmatter but no mai-id.
+	original := "---\ntitle: Existing Note\ncreated: 2025-01-01\n---\n# Body\n\nContent.\n"
+	os.WriteFile(filepath.Join(docsDir, "existing.md"), []byte(original), 0644)
+
+	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	if len(result.Imported) != 1 {
+		t.Fatalf("should import, got %d", len(result.Imported))
+	}
+
+	data, _ := os.ReadFile(filepath.Join(docsDir, "existing.md"))
+	content := string(data)
+
+	if !strings.Contains(content, "mai-id:") {
+		t.Errorf("mai-id not added.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "title: Existing Note") {
+		t.Errorf("title dropped when mai-id was added.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "created: 2025-01-01") {
+		t.Errorf("created field dropped when mai-id was added.\nGot:\n%s", content)
 	}
 }
 
