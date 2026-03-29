@@ -457,6 +457,24 @@ func runPRComment(e notes.Engine, args []string) {
 		fatal("usage: mai pr comment <id> -m 'message' [--file path] [--line N]")
 	}
 
-	// Delegate to runAddNote — same behavior
-	runAddNote(e, args)
+	id := args[0]
+	remaining := args[1:]
+
+	// Parse flags that runAddNote expects, translating -m to positional body
+	var translated []string
+	translated = append(translated, id)
+	for i := 0; i < len(remaining); i++ {
+		switch remaining[i] {
+		case "-m", "--message", "-d", "--description":
+			i++
+			if i < len(remaining) {
+				// Pass message as positional text for runAddNote
+				translated = append(translated, remaining[i])
+			}
+		default:
+			translated = append(translated, remaining[i])
+		}
+	}
+
+	runAddNote(e, translated)
 }
