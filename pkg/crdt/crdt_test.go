@@ -88,7 +88,7 @@ func TestSaveAndLoad(t *testing.T) {
 }
 
 func TestConcurrentMerge(t *testing.T) {
-	// Two docs start from the same state
+	// Two docs start from the same state, edit concurrently, merge via full state
 	doc1, _ := New()
 	doc1.Insert(0, "Hello World")
 	state, _ := doc1.Save()
@@ -101,38 +101,37 @@ func TestConcurrentMerge(t *testing.T) {
 	// Doc2 inserts " amazing" at position 5 (concurrent edit!)
 	doc2.Insert(5, " amazing")
 
-	// Get updates from each
-	sv1, _ := doc1.StateVector()
-	sv2, _ := doc2.StateVector()
+	// Merge via full state (the path maitake uses)
+	state1, _ := doc1.Save()
+	state2, _ := doc2.Save()
 
-	diff1, _ := doc1.Diff(sv2) // changes doc2 doesn't have
-	diff2, _ := doc2.Diff(sv1) // changes doc1 doesn't have
+	merged1, _ := Load(state1)
+	merged1.Apply(state2)
+	merged2, _ := Load(state2)
+	merged2.Apply(state1)
 
-	// Apply each other's changes
-	doc1.Apply(diff2)
-	doc2.Apply(diff1)
-
-	// Both should converge to the same content
-	content1, _ := doc1.Content()
-	content2, _ := doc2.Content()
+	content1, _ := merged1.Content()
+	content2, _ := merged2.Content()
 
 	if content1 != content2 {
-		t.Errorf("docs diverged!\n  doc1: %q\n  doc2: %q", content1, content2)
+		t.Errorf("docs diverged!\n  merged1: %q\n  merged2: %q", content1, content2)
 	}
 
 	// Both edits should be present
-	if len(content1) < len("Hello beautiful amazing World") {
-		t.Errorf("merged content too short: %q", content1)
+	if !containsStr(content1, "beautiful") || !containsStr(content1, "amazing") {
+		t.Errorf("missing edits: %q", content1)
 	}
 
 	t.Logf("Merged result: %q", content1)
 
 	doc1.Close()
 	doc2.Close()
+	merged1.Close()
+	merged2.Close()
 }
 
-func TestSimpleDiffApply(t *testing.T) {
-	// Start from shared state
+func TestDiffApply_Sequential(t *testing.T) {
+	// Diff+Apply works for sequential (non-concurrent) edits
 	base, _ := New()
 	base.Insert(0, "AB")
 	state, _ := base.Save()
@@ -141,16 +140,13 @@ func TestSimpleDiffApply(t *testing.T) {
 	doc1, _ := Load(state)
 	doc2, _ := Load(state)
 
-	// Doc1 appends C
+	// Doc1 appends C (only one side edits)
 	doc1.Insert(2, "C")
 
-	// Get diff from doc1 that doc2 doesn't have
 	sv2, _ := doc2.StateVector()
 	diff, _ := doc1.Diff(sv2)
-
 	t.Logf("diff len: %d bytes", len(diff))
 
-	// Apply to doc2
 	err := doc2.Apply(diff)
 	if err != nil {
 		t.Fatal(err)
@@ -160,16 +156,55 @@ func TestSimpleDiffApply(t *testing.T) {
 	c2, _ := doc2.Content()
 	t.Logf("doc1: %q, doc2: %q", c1, c2)
 	if c1 != c2 {
-		t.Errorf("simple diff/apply diverged")
+		t.Errorf("sequential diff/apply diverged")
 	}
 
 	doc1.Close()
 	doc2.Close()
 }
 
+func TestFullStateMerge_EndOfDoc(t *testing.T) {
+	// Full state merge: both peers append at end of document.
+	// This is the merge path maitake uses (not diff+apply).
+	base, _ := New()
+	base.Insert(0, "AB")
+	state, _ := base.Save()
+	base.Close()
+
+	doc1, _ := Load(state)
+	doc2, _ := Load(state)
+
+	doc1.Insert(2, "C")
+	doc2.Insert(2, "D")
+
+	state1, _ := doc1.Save()
+	state2, _ := doc2.Save()
+
+	// Merge both ways — must converge
+	merged1, _ := Load(state1)
+	merged1.Apply(state2)
+	merged2, _ := Load(state2)
+	merged2.Apply(state1)
+
+	c1, _ := merged1.Content()
+	c2, _ := merged2.Content()
+
+	if c1 != c2 {
+		t.Errorf("full state merge diverged: %q vs %q", c1, c2)
+	}
+	if !containsStr(c1, "C") || !containsStr(c1, "D") {
+		t.Errorf("missing edits: %q", c1)
+	}
+	t.Logf("converged: %q", c1)
+
+	merged1.Close()
+	merged2.Close()
+	doc1.Close()
+	doc2.Close()
+}
+
 func TestMultipleEditsAndMerge(t *testing.T) {
-	t.Skip("TODO: investigate end-of-doc concurrent append merge across separate WASM instances")
-	// Start from shared state
+	// Two peers concurrently append sections, then merge via full state
 	base, _ := New()
 	base.Insert(0, "# Architecture\n\nThe system uses services.\n")
 	state, _ := base.Save()
@@ -186,23 +221,25 @@ func TestMultipleEditsAndMerge(t *testing.T) {
 	len2, _ := doc2.Length()
 	doc2.Insert(uint32(len2), "\n## Monolith\nOne big binary.\n")
 
-	// Sync
-	sv1, _ := doc1.StateVector()
-	sv2, _ := doc2.StateVector()
-	diff1, _ := doc1.Diff(sv2)
-	diff2, _ := doc2.Diff(sv1)
-	doc1.Apply(diff2)
-	doc2.Apply(diff1)
+	// Merge via full state (not diff+apply — see spike findings)
+	state1, _ := doc1.Save()
+	state2, _ := doc2.Save()
 
-	content1, _ := doc1.Content()
-	content2, _ := doc2.Content()
+	merged1, _ := Load(state1)
+	merged1.Apply(state2)
+
+	merged2, _ := Load(state2)
+	merged2.Apply(state1)
+
+	content1, _ := merged1.Content()
+	content2, _ := merged2.Content()
 
 	if content1 != content2 {
-		t.Errorf("diverged:\n  doc1: %q\n  doc2: %q", content1, content2)
+		t.Errorf("diverged:\n  merged1: %q\n  merged2: %q", content1, content2)
 	}
 
 	// Both sections should be present
-	if !contains(content1, "Microservices") || !contains(content1, "Monolith") {
+	if !containsStr(content1, "Microservices") || !containsStr(content1, "Monolith") {
 		t.Errorf("missing edits in merged: %q", content1)
 	}
 
@@ -210,6 +247,8 @@ func TestMultipleEditsAndMerge(t *testing.T) {
 
 	doc1.Close()
 	doc2.Close()
+	merged1.Close()
+	merged2.Close()
 }
 
 func contains(s, sub string) bool {

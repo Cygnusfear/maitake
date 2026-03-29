@@ -4,7 +4,9 @@ package crdt
 
 import (
 	"context"
+	"crypto/rand"
 	_ "embed"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -12,6 +14,12 @@ import (
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
+
+func randomClientID() uint64 {
+	var buf [8]byte
+	rand.Read(buf[:])
+	return binary.LittleEndian.Uint64(buf[:])
+}
 
 //go:embed yrs.wasm
 var yrsWasm []byte
@@ -68,27 +76,56 @@ func New() (*TextDoc, error) {
 }
 
 // Load creates a TextDoc from a serialized state (from Save).
+// Each Load generates a unique client ID to ensure correct CRDT merge.
 func Load(state []byte) (*TextDoc, error) {
-	doc, err := New()
+	ctx := context.Background()
+	r := wazero.NewRuntime(ctx)
+
+	wasi_snapshot_preview1.MustInstantiate(ctx, r)
+
+	compiled, err := r.CompileModule(ctx, yrsWasm)
 	if err != nil {
-		return nil, err
+		r.Close(ctx)
+		return nil, fmt.Errorf("compiling yrs wasm: %w", err)
 	}
 
-	doc.mu.Lock()
-	defer doc.mu.Unlock()
+	inst, err := r.InstantiateModule(ctx, compiled, wazero.NewModuleConfig().WithName("yrs"))
+	if err != nil {
+		r.Close(ctx)
+		return nil, fmt.Errorf("instantiating yrs wasm: %w", err)
+	}
 
+	doc := &TextDoc{
+		runtime: r,
+		mod:     compiled,
+		inst:    inst,
+		ctx:     ctx,
+	}
+
+	// Load state with a unique client ID for this peer
+	clientID := randomClientID()
 	ptr, err := doc.writeToWasm(state)
 	if err != nil {
 		doc.Close()
 		return nil, err
 	}
-	defer doc.freeWasm(ptr, uint32(len(state)))
 
-	docLoad := doc.inst.ExportedFunction("doc_load")
-	results, err := docLoad.Call(doc.ctx, uint64(ptr), uint64(len(state)))
-	if err != nil || results[0] != 0 {
-		doc.Close()
-		return nil, fmt.Errorf("doc_load failed")
+	docLoadFn := inst.ExportedFunction("doc_load_with_client")
+	if docLoadFn != nil {
+		results, err := docLoadFn.Call(ctx, clientID, uint64(ptr), uint64(len(state)))
+		doc.freeWasm(ptr, uint32(len(state)))
+		if err != nil || int32(results[0]) != 0 {
+			doc.Close()
+			return nil, fmt.Errorf("doc_load_with_client failed")
+		}
+	} else {
+		docLoadFn = inst.ExportedFunction("doc_load")
+		results, err := docLoadFn.Call(ctx, uint64(ptr), uint64(len(state)))
+		doc.freeWasm(ptr, uint32(len(state)))
+		if err != nil || int32(results[0]) != 0 {
+			doc.Close()
+			return nil, fmt.Errorf("doc_load failed")
+		}
 	}
 
 	return doc, nil

@@ -51,7 +51,7 @@ pub extern "C" fn get_result_len() -> u32 {
 
 // ── Doc lifecycle ────────────────────────────────────────────────────────
 
-/// Create a new empty YDoc. Returns 0 on success.
+/// Create a new empty YDoc with a given client ID. Returns 0 on success.
 #[no_mangle]
 pub extern "C" fn doc_new() -> i32 {
     let mut doc = DOC.lock().unwrap();
@@ -59,7 +59,39 @@ pub extern "C" fn doc_new() -> i32 {
     0
 }
 
+/// Create a new empty YDoc with a specific client ID. Returns 0 on success.
+#[no_mangle]
+pub extern "C" fn doc_new_with_client(client_id: u64) -> i32 {
+    let mut doc = DOC.lock().unwrap();
+    *doc = Some(Doc::with_client_id(client_id));
+    0
+}
+
+/// Load a YDoc from a state update (binary) with a given client ID.
+/// The client_id ensures different peers have distinct identities for merge.
+/// Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn doc_load_with_client(client_id: u64, ptr: *const u8, len: u32) -> i32 {
+    let data = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    let new_doc = Doc::with_client_id(client_id);
+    let update = match Update::decode_v1(data) {
+        Ok(u) => u,
+        Err(_) => return -1,
+    };
+    {
+        let mut txn = new_doc.transact_mut();
+        if txn.apply_update(update).is_err() {
+            return -1;
+        }
+    }
+    let mut doc = DOC.lock().unwrap();
+    *doc = Some(new_doc);
+    0
+}
+
 /// Load a YDoc from a state update (binary). Returns 0 on success, -1 on error.
+/// WARNING: Uses Doc::new() which may generate non-unique client IDs in WASM.
+/// Prefer doc_load_with_client() for multi-peer scenarios.
 #[no_mangle]
 pub extern "C" fn doc_load(ptr: *const u8, len: u32) -> i32 {
     let data = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
