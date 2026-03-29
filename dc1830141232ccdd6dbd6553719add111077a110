@@ -3,3 +3,5 @@
 {"kind":"event","field":"body","value":"Shiiit-ake\n","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-3vqh"}}],"timestamp":"2026-03-28T21:44:17Z","branch":"main"}
 
 {"kind":"event","field":"body","value":"Shiiit-ake\n\nMay\n\n\n","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-3vqh"}}],"timestamp":"2026-03-28T21:44:19Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-3vqh"}}],"body":"cleanup: test/garbage tickets","timestamp":"2026-03-29T12:16:54Z","branch":"main"}
