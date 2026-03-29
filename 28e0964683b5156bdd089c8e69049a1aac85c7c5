@@ -7,3 +7,5 @@
 {"id":"ae-lvom","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ixdi"}}],"body":"Progress: wrote the first adversarial engine suite draft in test/engine_adversarial_test.go, including crash-isolated helpers for the current concurrency bugs. Running focused tests now.","timestamp":"2026-03-29T14:23:46Z","branch":"teams/adversarial-engine/mai-ixdi"}
 
 {"id":"ae-d238","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ixdi"}}],"body":"Progress: focused engine tests now pass. The new suite documents current bugs too: duplicate auto IDs under 1000 rapid creates, plus crash-isolated concurrency failures for create/append/find races. Running full go test ./... next.","timestamp":"2026-03-29T14:35:18Z","branch":"teams/adversarial-engine/mai-ixdi"}
+
+{"id":"ae-z7an","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ixdi"}}],"body":"Progress: full go test ./... now passes with the new suite. I’m committing test/engine_adversarial_test.go next, then I’ll close the ticket with the bug summary and coverage highlights.","timestamp":"2026-03-29T14:42:59Z","branch":"teams/adversarial-engine/mai-ixdi"}
