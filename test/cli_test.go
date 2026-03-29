@@ -48,6 +48,8 @@ func mai(t *testing.T, dir string, args ...string) string {
 		"GIT_AUTHOR_EMAIL=test@test.com",
 		"GIT_COMMITTER_NAME=Test",
 		"GIT_COMMITTER_EMAIL=test@test.com",
+		// Prevent git from opening an interactive editor (e.g. during merge -e)
+		"GIT_EDITOR=true",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -66,6 +68,8 @@ func maiFail(t *testing.T, dir string, args ...string) string {
 		"GIT_AUTHOR_EMAIL=test@test.com",
 		"GIT_COMMITTER_NAME=Test",
 		"GIT_COMMITTER_EMAIL=test@test.com",
+		// Prevent git from opening an interactive editor (e.g. during merge -e)
+		"GIT_EDITOR=true",
 	)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -84,6 +88,7 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 		"GIT_AUTHOR_EMAIL=test@test.com",
 		"GIT_COMMITTER_NAME=Test",
 		"GIT_COMMITTER_EMAIL=test@test.com",
+		"GIT_EDITOR=true",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
