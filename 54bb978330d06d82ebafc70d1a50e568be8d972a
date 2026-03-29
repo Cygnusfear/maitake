@@ -5,3 +5,5 @@
 {"id":"mai-oqmp","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ts1e"}}],"body":"Looks good to me","resolved":true,"timestamp":"2026-03-29T12:45:48Z","branch":"test/pr-workflow"}
 
 {"id":"mai-6v8a","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ts1e"}}],"body":"Needs more tests","resolved":false,"timestamp":"2026-03-29T12:45:57Z","branch":"test/pr-workflow"}
+
+{"id":"mai-jihi","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ts1e"}}],"body":"-m Fixed the tests","timestamp":"2026-03-29T12:46:09Z","branch":"test/pr-workflow"}
