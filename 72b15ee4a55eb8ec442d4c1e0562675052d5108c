@@ -5,3 +5,5 @@
 {"id":"ptw-0su4","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-eu3f"}}],"body":"Starting to write test/pr_test.go — read pr.go, main.go, cli_test.go, engine.go IsMerged. All 29 test cases mapped. Writing now.","timestamp":"2026-03-29T12:54:12Z","branch":"teams/pr-test-writer/mai-eu3f"}
 
 {"id":"ptw-nwxc","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-eu3f"}}],"body":"DONE: Created test/pr_test.go with all 29 test cases passing. Added GIT_EDITOR=true to test helpers to prevent git merge -e from opening an interactive editor. All existing tests still pass. Committed as 54bf4b5.","timestamp":"2026-03-29T13:02:09Z","branch":"teams/pr-test-writer/mai-eu3f"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-eu3f"}}],"timestamp":"2026-03-29T13:02:09Z","branch":"teams/pr-test-writer/mai-eu3f"}
