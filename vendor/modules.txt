@@ -6,6 +6,9 @@ github.com/BurntSushi/toml/internal
 ## explicit; go 1.17
 github.com/fsnotify/fsnotify
 github.com/fsnotify/fsnotify/internal
+# github.com/sergi/go-diff v1.4.0
+## explicit; go 1.13
+github.com/sergi/go-diff/diffmatchpatch
 # github.com/tetratelabs/wazero v1.11.0
 ## explicit; go 1.24.0
 github.com/tetratelabs/wazero
