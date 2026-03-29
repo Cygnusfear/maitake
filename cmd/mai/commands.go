@@ -715,7 +715,29 @@ func runKinds(e notes.Engine) {
 	}
 }
 
-func runDoctor(e notes.Engine) {
+func runDoctor(e notes.Engine, args []string) {
+	var purgeKind string
+	var purgeStatus string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--purge-kind":
+			i++
+			if i < len(args) {
+				purgeKind = args[i]
+			}
+		case "--purge-status":
+			i++
+			if i < len(args) {
+				purgeStatus = args[i]
+			}
+		}
+	}
+
+	if purgeKind != "" || purgeStatus != "" {
+		runPurge(e, purgeKind, purgeStatus)
+		return
+	}
+
 	report, err := e.Doctor()
 	if err != nil {
 		fatal("doctor: %v", err)
@@ -737,6 +759,65 @@ func runDoctor(e notes.Engine) {
 	for status, count := range report.ByStatus {
 		fmt.Printf("  %-16s %d\n", status, count)
 	}
+}
+
+func runPurge(e notes.Engine, kind, status string) {
+	filter := notes.FindOptions{}
+	if kind != "" {
+		filter.Kind = kind
+	}
+	if status != "" {
+		filter.Status = status
+	} else {
+		// Default: purge from all statuses
+		filter.Status = "all"
+	}
+
+	states, err := e.Find(filter)
+	if err != nil {
+		fatal("purge: %v", err)
+	}
+
+	if len(states) == 0 {
+		fmt.Println("Nothing to purge.")
+		return
+	}
+
+	desc := ""
+	if kind != "" {
+		desc += "kind=" + kind
+	}
+	if status != "" {
+		if desc != "" {
+			desc += ", "
+		}
+		desc += "status=" + status
+	}
+
+	fmt.Printf("Will close %d notes (%s). Continue? [y/N] ", len(states), desc)
+	var answer string
+	fmt.Scanln(&answer)
+	if answer != "y" && answer != "Y" {
+		fmt.Println("Aborted.")
+		return
+	}
+
+	closed := 0
+	for _, s := range states {
+		if s.Status == "closed" {
+			continue // already closed
+		}
+		_, err := e.Append(notes.AppendOptions{
+			TargetID: s.ID,
+			Kind:     "event",
+			Field:    "status",
+			Value:    "closed",
+		})
+		if err == nil {
+			closed++
+		}
+	}
+	fmt.Printf("Closed %d notes.\n", closed)
 }
 
 func runClosed(e notes.Engine, args []string) {

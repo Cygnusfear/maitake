@@ -304,6 +304,10 @@ type Repo interface {
 	// This is the batch version of the corresponding GetNotes(...) method.
 	GetAllNotes(ref NotesRef) (map[OID][]Note, error)
 
+	// GetAllNotesUnfiltered reads all notes regardless of object type (not just commits).
+	// Uses batch reads — 2 git commands instead of N+1.
+	GetAllNotesUnfiltered(ref NotesRef) (map[OID][]Note, error)
+
 	// AppendNote appends a note to a revision under the given ref.
 	AppendNote(ref NotesRef, revision OID, note Note) error
 

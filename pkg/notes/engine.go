@@ -496,27 +496,21 @@ func (e *RealEngine) Rebuild() error {
 	// Cache miss — full rebuild from git
 	var allNotes []*Note
 
-	// Scan all maitake refs
-	// For now, scan the active ref only
-	// TODO: scan all maitake refs (slots, branches) when NoteRefs is added
-	refs := []git.NotesRef{ref}
-	for _, r := range refs {
-		entries := e.repo.ListAllNotedObjects(r)
-		for _, oid := range entries {
-			noteData := e.repo.GetNotes(r, oid)
-			if len(noteData) == 0 {
-				continue
+	// Batch read all notes in 2 git commands (not N+1)
+	allNotesMap, err := e.repo.GetAllNotesUnfiltered(ref)
+	if err != nil {
+		return fmt.Errorf("reading notes: %w", err)
+	}
+	for oid, rawNotes := range allNotesMap {
+		for _, raw := range rawNotes {
+			note, err := Parse(raw)
+			if err != nil {
+				continue // skip unparseable notes
 			}
-			for _, raw := range noteData {
-				note, err := Parse(raw)
-				if err != nil {
-					continue // skip unparseable notes
-				}
-				note.TargetOID = string(oid)
-				note.Ref = string(r)
-				idx.Ingest(note)
-				allNotes = append(allNotes, note)
-			}
+			note.TargetOID = string(oid)
+			note.Ref = string(ref)
+			idx.Ingest(note)
+			allNotes = append(allNotes, note)
 		}
 	}
 

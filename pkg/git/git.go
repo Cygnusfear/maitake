@@ -928,6 +928,30 @@ func (repo *GitRepo) GetAllNotes(ref NotesRef) (map[OID][]Note, error) {
 	return commitNotesMap, nil
 }
 
+// GetAllNotesUnfiltered reads all notes under a ref, regardless of object type.
+// Uses batch reads — 2 git commands total instead of N+1.
+func (repo *GitRepo) GetAllNotesUnfiltered(ref NotesRef) (map[OID][]Note, error) {
+	overview, err := repo.notesOverview(ref)
+	if err != nil {
+		return nil, err
+	}
+	noteContentsMap, err := overview.getNoteContentsMap(repo)
+	if err != nil {
+		return nil, fmt.Errorf("batch read notes: %v", err)
+	}
+	result := make(map[OID][]Note)
+	for _, nm := range overview.NotesMappings {
+		noteBytes := noteContentsMap[*nm.NotesHash]
+		byteSlices := bytes.Split(noteBytes, []byte("\n"))
+		var notes []Note
+		for _, slice := range byteSlices {
+			notes = append(notes, Note(slice))
+		}
+		result[OID(*nm.ObjectHash)] = notes
+	}
+	return result, nil
+}
+
 // AppendNote appends a note to a revision under the given ref.
 func (repo *GitRepo) AppendNote(ref NotesRef, revision OID, note Note) error {
 	_, err := repo.runGitCommand("notes", "--ref", string(ref), "append", "-m", string(note), string(revision))

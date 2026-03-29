@@ -125,7 +125,7 @@ func (idx *Index) Query(opts FindOptions) []*State {
 	if opts.Kind != "" {
 		candidates = intersect(candidates, idx.ByKind[opts.Kind])
 	}
-	if opts.Status != "" {
+	if opts.Status != "" && opts.Status != "all" {
 		candidates = intersect(candidates, idx.ByStatus[opts.Status])
 	}
 	if opts.Tag != "" {

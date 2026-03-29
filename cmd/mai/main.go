@@ -138,7 +138,7 @@ Run 'mai <command> -h' for command-specific help.`)
 	case "kinds":
 		withEngine(func(e notes.Engine) { runKinds(e) })
 	case "doctor":
-		withEngine(func(e notes.Engine) { runDoctor(e) })
+		withEngine(func(e notes.Engine) { runDoctor(e, args) })
 	case "closed":
 		withEngine(func(e notes.Engine) { runClosed(e, args) })
 	case "ready":

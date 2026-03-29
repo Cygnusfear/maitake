@@ -583,6 +583,14 @@ func (r *mockRepoForTest) GetAllNotes(ref NotesRef) (map[OID][]Note, error) {
 	return notesMap, nil
 }
 
+func (r *mockRepoForTest) GetAllNotesUnfiltered(ref NotesRef) (map[OID][]Note, error) {
+	notesMap := make(map[OID][]Note)
+	for revision := range r.Notes[string(ref)] {
+		notesMap[OID(revision)] = r.GetNotes(ref, OID(revision))
+	}
+	return notesMap, nil
+}
+
 // AppendNote appends a note to a revision under the given ref.
 func (r *mockRepoForTest) AppendNote(ref NotesRef, revision OID, note Note) error {
 	refStr := string(ref)
