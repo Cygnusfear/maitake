@@ -169,11 +169,7 @@ Run 'mai <command> -h' for command-specific help.`)
 			withEngine(func(e notes.Engine) { runShortcut(e, "decision", "", args) })
 		}
 	case "pr":
-		if len(args) == 0 {
-			withEngine(func(e notes.Engine) { runPRList(e) })
-		} else {
-			withEngine(func(e notes.Engine) { runPRCreate(e, args) })
-		}
+		dispatchPR(args)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -211,6 +207,59 @@ func withEngine(fn func(notes.Engine)) {
 	ensureDaemon()
 
 	fn(engine)
+}
+
+func withEngineAndRepo(fn func(notes.Engine, git.Repo)) {
+	dir := globalDir
+	if dir == "" {
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			fatal("getting working directory: %v", err)
+		}
+	}
+	repo, err := git.NewGitRepo(dir)
+	if err != nil {
+		fatal("not a git repository (or any parent)")
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		fatal("initializing engine: %v", err)
+	}
+	registerRepo(repo.GetPath())
+	ensureDaemon()
+	fn(engine, repo)
+}
+
+// dispatchPR routes `mai pr <subcommand>` to the appropriate handler.
+// Subcommands: show, accept, reject, submit, diff, comment.
+// No subcommand = list. Anything else = create.
+func dispatchPR(args []string) {
+	if len(args) == 0 {
+		withEngine(func(e notes.Engine) { runPRList(e) })
+		return
+	}
+
+	sub := args[0]
+	rest := args[1:]
+
+	switch sub {
+	case "show":
+		withEngineAndRepo(func(e notes.Engine, r git.Repo) { runPRShow(e, r, rest) })
+	case "accept":
+		withEngine(func(e notes.Engine) { runPRAccept(e, rest) })
+	case "reject":
+		withEngine(func(e notes.Engine) { runPRReject(e, rest) })
+	case "submit":
+		withEngineAndRepo(func(e notes.Engine, r git.Repo) { runPRSubmit(e, r, rest) })
+	case "diff":
+		withEngineAndRepo(func(e notes.Engine, r git.Repo) { runPRDiff(e, r, rest) })
+	case "comment":
+		withEngine(func(e notes.Engine) { runPRComment(e, rest) })
+	default:
+		// Not a subcommand — treat as pr create (title text)
+		withEngine(func(e notes.Engine) { runPRCreate(e, args) })
+	}
 }
 
 func ensureDaemon() {
