@@ -281,26 +281,36 @@ func loadRepoList() []string {
 	if err != nil {
 		return nil
 	}
+	seen := make(map[string]bool)
 	var repos []string
 	var alive []string
-	pruned := false
+	changed := false
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(line, ".git")); err != nil {
-			// Also check for worktree .git file
-			if _, err2 := os.Stat(line); err2 != nil {
-				pruned = true
-				continue // path doesn't exist — prune it
-			}
+		// Prune paths that no longer exist
+		if _, err := os.Stat(line); err != nil {
+			changed = true
+			continue
 		}
-		repos = append(repos, line)
-		alive = append(alive, line)
+		// Resolve worktrees to their main repo
+		resolved := resolveMainRepo(line)
+		if resolved != line {
+			changed = true
+		}
+		// Dedupe
+		if seen[resolved] {
+			changed = true
+			continue
+		}
+		seen[resolved] = true
+		repos = append(repos, resolved)
+		alive = append(alive, resolved)
 	}
-	// Write back pruned list
-	if pruned {
+	// Write back cleaned list
+	if changed {
 		os.WriteFile(reposFile, []byte(strings.Join(alive, "\n")+"\n"), 0644)
 	}
 	return repos

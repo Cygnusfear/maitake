@@ -289,6 +289,10 @@ func registerRepo(repoPath string) {
 		return
 	}
 
+	// If this is a worktree, register the main repo instead.
+	// Worktrees have a .git file (not dir) pointing at the main repo.
+	repoPath = resolveMainRepo(repoPath)
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
@@ -309,6 +313,37 @@ func registerRepo(repoPath string) {
 	}
 	defer f.Close()
 	f.WriteString(repoPath + "\n")
+}
+
+// resolveMainRepo returns the main repo path if repoPath is a worktree.
+// Worktrees have a .git file containing "gitdir: /path/to/main/.git/worktrees/name".
+// If it's already a main repo (has .git dir), returns the path unchanged.
+func resolveMainRepo(repoPath string) string {
+	dotGit := filepath.Join(repoPath, ".git")
+	info, err := os.Stat(dotGit)
+	if err != nil {
+		return repoPath
+	}
+	if info.IsDir() {
+		return repoPath // normal repo, not a worktree
+	}
+	// .git is a file — this is a worktree
+	data, err := os.ReadFile(dotGit)
+	if err != nil {
+		return repoPath
+	}
+	content := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(content, "gitdir: ") {
+		return repoPath
+	}
+	// Parse: "gitdir: /path/to/main/.git/worktrees/name"
+	gitDir := strings.TrimPrefix(content, "gitdir: ")
+	// Walk up from .git/worktrees/name to find the main repo
+	// The main .git dir is the parent of "worktrees/"
+	if idx := strings.Index(gitDir, "/.git/worktrees/"); idx >= 0 {
+		return gitDir[:idx]
+	}
+	return repoPath
 }
 
 func fatal(format string, args ...any) {

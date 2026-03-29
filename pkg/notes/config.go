@@ -89,7 +89,7 @@ func defaultConfig() Config {
 		Docs: DocsConfig{
 			Sync:  "auto",
 			Dir:   ".mai-docs",
-			Watch: false, // opt-in: set docs.watch = true in repo or global config
+			Watch: true,
 		},
 		Hooks: HooksConfig{
 			PreWrite: true,
