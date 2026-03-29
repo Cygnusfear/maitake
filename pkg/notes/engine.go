@@ -294,6 +294,15 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	e.index.Ingest(note)
 	e.index.Build()
 
+	// If this is a body edit on a doc note, update the YDoc state too
+	if opts.Field == "body" && creation.Kind == "doc" {
+		body := opts.Body
+		if body == "" {
+			body = opts.Value
+		}
+		e.updateYDoc(fullID, body, ref, targetOID)
+	}
+
 	// Update cache with new ref tip
 	e.updateCache(ref)
 
@@ -593,6 +602,86 @@ func (e *RealEngine) Sync() error {
 }
 
 // autoSyncDoc materializes a doc note to disk if docs.sync is "auto".
+
+// updateYDoc loads the existing YDoc state, diffs old vs new body, applies ops, saves.
+func (e *RealEngine) updateYDoc(noteID, newBody string, ref git.NotesRef, targetOID git.OID) {
+	// Get current state from fold
+	state, err := e.Fold(noteID)
+	if err != nil {
+		return
+	}
+
+	var doc *crdt.TextDoc
+	if state.YDocState != nil {
+		doc, err = crdt.Load(state.YDocState)
+	} else {
+		// No YDoc yet — initialize from the previous body
+		doc, err = crdt.New()
+		if err == nil {
+			// Insert the OLD body (before this edit)
+			// The fold already applied our body event, so state.Body IS newBody.
+			// We need the old body. Get it from events.
+			oldBody := ""
+			if creation := e.index.CreationNotes[noteID]; creation != nil {
+				oldBody = creation.Body
+			}
+			// Replay previous body events to get the body BEFORE this edit
+			for _, ev := range state.Events {
+				if ev.Field == "body" {
+					evBody := ev.Body
+					if evBody == "" {
+						evBody = ev.Value
+					}
+					// Skip the last body event (that's the one we just wrote)
+					if evBody == newBody {
+						break
+					}
+					oldBody = evBody
+				}
+			}
+			doc.Insert(0, oldBody)
+		}
+	}
+	if err != nil {
+		return
+	}
+	defer doc.Close()
+
+	// Diff YDoc content vs new body, apply ops
+	ydocContent, _ := doc.Content()
+	ops := crdt.Diff(ydocContent, newBody)
+	if err := crdt.ApplyOps(doc, ops); err != nil {
+		return
+	}
+
+	newState, err := doc.Save()
+	if err != nil {
+		return
+	}
+
+	// Emit ydoc event
+	encoded := base64.StdEncoding.EncodeToString(newState)
+	ydocNote := &Note{
+		Kind:      "event",
+		Field:     "ydoc",
+		Value:     encoded,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Branch:    e.currentGitBranch(),
+		Edges: []Edge{{
+			Type:   "updates",
+			Target: EdgeTarget{Kind: "note", Ref: noteID},
+		}},
+	}
+	data, err := Serialize(ydocNote)
+	if err != nil {
+		return
+	}
+	if err := e.repo.AppendNote(ref, targetOID, git.Note(data)); err != nil {
+		return
+	}
+	e.index.Ingest(ydocNote)
+	e.index.Build()
+}
 
 // initYDoc creates a YDoc from body text and stores its state as a ydoc event.
 func (e *RealEngine) initYDoc(noteID, body string, ref git.NotesRef, targetOID git.OID) {

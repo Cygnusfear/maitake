@@ -2,10 +2,13 @@ package notes
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/cygnusfear/maitake/pkg/crdt"
 )
 
 // DocFile represents a materialized doc on disk.
@@ -102,14 +105,31 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 			if df.Hash == noteHash {
 				continue // in sync
 			}
-			// File changed — file wins (Obsidian edits are the common case)
+			// Hashes differ — merge via CRDT if state available, else file wins
 			if !dryRun {
+				// Get the creation body as the base for 3-way merge
+				creationBody := ""
+				if creation, err := engine.Get(id); err == nil && creation != nil {
+					creationBody = creation.Body
+				}
+				merged := mergeViaCRDT(state, df.Content, creationBody)
 				engine.Append(AppendOptions{
 					TargetID: id,
 					Kind:     "event",
 					Field:    "body",
-					Value:    df.Content,
+					Body:     merged.Body,
 				})
+				if merged.YDocState != nil {
+					engine.Append(AppendOptions{
+						TargetID: id,
+						Kind:     "event",
+						Field:    "ydoc",
+						Value:    base64.StdEncoding.EncodeToString(merged.YDocState),
+					})
+				}
+				// Write merged content back to file
+				absPath := filepath.Join(repoPath, df.Path)
+				writeDocFile(absPath, id, merged.Body)
 			}
 			result.Updated = append(result.Updated, df.Path)
 		} else {
@@ -292,6 +312,104 @@ func RemoveTombstone(repoPath, noteID string) {
 		}
 	}
 	os.WriteFile(tsFile, []byte(strings.Join(lines, "\n")+"\n"), 0644)
+}
+
+// mergeResult holds the output of a CRDT merge.
+type mergeResult struct {
+	Body      string
+	YDocState []byte
+}
+
+// lastSyncBody returns the body content as it was when last synced to disk.
+// This is the "base" for 3-way merge. We look for the body value at the time
+// the file was last written (= the body in the most recent autoSync or docs sync).
+// Falls back to creation body if no sync happened.
+func lastSyncBody(state *State) string {
+	// The file was last written with the note's body at that time.
+	// Since we don't track sync timestamps yet, use the CREATION body
+	// as the base — it's what the file was first created from.
+	// TODO: track last-sync body hash for better 3-way merge base
+	return ""
+}
+
+// mergeViaCRDT merges a note's body with a file's content using CRDT.
+//
+// The note's YDoc state is the authority. The file's changes are applied
+// as a peer edit on top of the same shared base:
+// 1. Load the note's YDoc (contains all note-side edits)
+// 2. Get what the YDoc thinks the content is (= note-side view)
+// 3. The file was last synced from an OLDER version of the YDoc
+// 4. Load that same base state as a "file peer", apply the file diff
+// 5. Merge both via full-state Apply
+//
+// Key insight: the file peer must start from the SAME base state as the
+// note doc to share CRDT history. We approximate the base as the initial
+// YDoc state (before the most recent note-side edit).
+//
+// If no YDoc state exists, falls back to file-wins and initializes YDoc.
+func mergeViaCRDT(state *State, fileContent string, creationBody string) mergeResult {
+	if state.YDocState != nil {
+		noteDoc, err := crdt.Load(state.YDocState)
+		if err == nil {
+			noteContent, _ := noteDoc.Content()
+			noteDoc.Close()
+
+			if noteContent == fileContent {
+				return mergeResult{Body: state.Body, YDocState: state.YDocState}
+			}
+
+			// True 3-way CRDT merge:
+			// 1. Create a base YDoc from the original content
+			// 2. Create note-side peer from base, apply note edits
+			// 3. Create file-side peer from base, apply file edits
+			// 4. Merge via full-state Apply
+			base := creationBody
+			if base == "" {
+				base = noteContent
+			}
+
+			// Base YDoc
+			baseDoc, err := crdt.New()
+			if err == nil {
+				defer baseDoc.Close()
+				baseDoc.Insert(0, base)
+				baseState, _ := baseDoc.Save()
+
+				// Note peer: base + note edits
+				notePeer, err := crdt.Load(baseState)
+				if err == nil {
+					defer notePeer.Close()
+					noteOps := crdt.Diff(base, noteContent)
+					crdt.ApplyOps(notePeer, noteOps)
+
+					// File peer: base + file edits
+					filePeer, err := crdt.Load(baseState)
+					if err == nil {
+						defer filePeer.Close()
+						fileOps := crdt.Diff(base, fileContent)
+						crdt.ApplyOps(filePeer, fileOps)
+						filePeerState, _ := filePeer.Save()
+
+						// Merge: note peer gets file peer's state
+						notePeer.Apply(filePeerState)
+						merged, _ := notePeer.Content()
+						newState, _ := notePeer.Save()
+						return mergeResult{Body: merged, YDocState: newState}
+					}
+				}
+			}
+		}
+	}
+
+	// No YDoc state or CRDT failed — initialize from file content (file wins)
+	doc, err := crdt.New()
+	if err != nil {
+		return mergeResult{Body: fileContent}
+	}
+	defer doc.Close()
+	doc.Insert(0, fileContent)
+	newState, _ := doc.Save()
+	return mergeResult{Body: fileContent, YDocState: newState}
 }
 
 func titleFromPath(path string) string {
