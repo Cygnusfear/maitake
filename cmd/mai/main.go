@@ -41,44 +41,7 @@ func main() {
 	args := rawArgs[1:]
 
 	if cmd == "-h" || cmd == "--help" || cmd == "help" {
-		fmt.Println(`mai — git-native notes, tickets, and reviews
-
-Usage: mai <command> [args]
-
-Commands:
-  ticket <title> [type]   Create a ticket (default type: task)
-  review <title>          Create a review
-  artifact <title>        Create an artifact (born closed)
-  create [flags] [title]  Create any note kind
-  show <id>               Show note details
-  ls [flags]              List notes (default: open + in_progress)
-  start <id>              Set status to in_progress
-  close <id> [-m msg]     Close a note
-  reopen <id>             Reopen a closed note
-  add-note <id> [-m msg]  Add a comment
-  tag <id> <tag>          Add a tag
-  assign <id> <who>       Set assignee
-  priority <id> <0-4>    Set priority
-  title <id> <new title> Rename a note
-  type <id> <new type>   Change type
-  edit <id> [-d body]    Update note body ($EDITOR if no -d)
-  dep <id> <dep-id>       Add dependency
-  link <id> <target-id>   Add link
-  context <id>            Show related notes
-  ready                   List ready-to-work tickets
-  blocked                 List blocked tickets
-  docs sync               Bidirectional docs ↔ notes sync
-  check [path]            Validate code refs and wiki links
-  refs <id>               Reverse-lookup references
-  init                    Initialize maitake in a repo
-  migrate                 Import tk tickets
-  doctor                  Health check
-
-Flags (before command):
-  -C <dir>     Run in a different repo
-  --json       Machine-readable output
-
-Run 'mai <command> -h' for command-specific help.`)
+		printUsage()
 		return
 	}
 
@@ -366,6 +329,12 @@ Create:
   artifact [title] [options] Shortcut: create -k artifact (born closed)
   adr [title] [flags]        List decisions, or create one
   pr [title] [flags]         List PRs, or create one (--into <branch>)
+  pr show <id> [--diff]      PR details, diff summary, review verdict
+  pr accept <id> [-m msg]    Accept PR (resolved comment)
+  pr reject <id> -m 'reason' Request changes (unresolved comment)
+  pr submit <id> [--force]   Merge source into target, close PR
+  pr diff <id> [--stat]      Diff between source and target branches
+  pr comment <id> -m 'msg'   Comment on a PR (--file, --line for inline)
 
 Lifecycle:
   start <id>                 Status → in_progress

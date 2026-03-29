@@ -50,6 +50,34 @@ Closed from `main` — the branch was merged. The event stream tells the story.
 
 **Options:** `-k kind`, `-t title`, `--type type`, `-p priority`, `-a assignee`, `-l a,b` (tags), `--target path`, `-d description`
 
+### Pull Requests
+
+Git-native PRs — no GitHub, no Forgejo, no platform lock-in. Stored as `kind: pr` notes.
+
+```bash
+# Create (from a feature branch)
+mai pr "Add auth middleware" --into main   # → mai-5c4a  feature/auth → main
+mai pr                                     # list open PRs (auto-closes merged ones)
+
+# Inspect
+mai pr show <id>                           # details + diff summary + review verdict
+mai pr show <id> --diff                    # include full inline diff
+mai pr diff <id>                           # full diff between source and target
+mai pr diff <id> --stat                    # summary only
+
+# Review
+mai pr accept <id> [-m message]            # LGTM (resolved comment)
+mai pr reject <id> -m 'reason'             # request changes (unresolved comment)
+mai pr comment <id> -m 'msg'               # general comment
+mai pr comment <id> -m 'msg' --file <path> --line N  # inline comment
+
+# Merge
+mai pr submit <id>                         # merge source → target, close PR
+mai pr submit <id> --force                 # skip unresolved comment check
+```
+
+PRs that are merged outside mai (via `git merge`, GitHub, etc.) auto-close when listed.
+
 ### Lifecycle
 
 ```bash
