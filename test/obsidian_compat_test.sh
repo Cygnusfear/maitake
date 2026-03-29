@@ -42,34 +42,47 @@ if ! command -v mai &>/dev/null; then
     exit 1
 fi
 
-# Setup: fresh test repo with docs vault
-echo "Setting up test vault at $VAULT..."
-rm -rf "$VAULT"
-mkdir -p "$VAULT"
-cd "$VAULT"
-git init -q
-git commit -q --allow-empty -m "init"
-mai init 2>/dev/null
+# Setup: reuse existing vault or create fresh
+if [ -d "$VAULT/.git" ]; then
+    echo "Using existing test vault at $VAULT"
+    cd "$VAULT"
+    # Clean leftover doc files from previous runs
+    find docs -name '*.md' ! -name 'README.md' -delete 2>/dev/null || true
+    # Clear maitake notes from previous runs (nuclear reset)
+    git notes --ref=refs/notes/maitake prune 2>/dev/null || true
+    # Remove all notes
+    for obj in $(git notes --ref=refs/notes/maitake list 2>/dev/null | awk '{print $2}'); do
+        git notes --ref=refs/notes/maitake remove "$obj" 2>/dev/null || true
+    done
+    rm -rf ~/.maitake/cache
+else
+    echo "Setting up test vault at $VAULT..."
+    rm -rf "$VAULT"
+    mkdir -p "$VAULT"
+    cd "$VAULT"
+    git init -q
+    git commit -q --allow-empty -m "init"
+    mai init 2>/dev/null
 
-# Ensure docs dir is "docs" for Obsidian vault compat
-mkdir -p .maitake
-cat > .maitake/config.toml << 'EOF'
+    mkdir -p .maitake
+    cat > .maitake/config.toml << 'EOF'
 [docs]
 dir = "docs"
 sync = "auto"
 watch = false
 EOF
 
-mkdir -p docs
+    mkdir -p docs
+    echo "# Test Vault" > docs/README.md
+    git add -A && git commit -q -m "vault setup"
 
-# Register as Obsidian vault (open it)
-# User needs to have the vault open in Obsidian for eval to work
-echo ""
-echo "================================================"
-echo "IMPORTANT: Open $VAULT/docs as a vault in Obsidian"
-echo "Then press Enter to continue..."
-echo "================================================"
-read -r
+    echo ""
+    echo "================================================"
+    echo "IMPORTANT: Open $VAULT/docs as a vault in Obsidian"
+    echo "Then press Enter to continue..."
+    echo "================================================"
+    read -r
+fi
 
 VAULT_NAME="docs"
 
@@ -82,6 +95,7 @@ echo "1. Doc note → file → Obsidian sees it"
 
 id=$(mai create "Obsidian Test One" -k doc -d "Hello from maitake" 2>&1)
 mai docs sync 2>/dev/null
+sleep 2  # let Obsidian index the new file
 
 if Obsidian read path="obsidian-test-one.md" vault="$VAULT_NAME" 2>/dev/null | grep -q "Hello from maitake"; then
     pass "Obsidian can read maitake-created doc"
@@ -103,10 +117,15 @@ fi
 echo "3. Obsidian frontmatter survives maitake sync"
 
 Obsidian property:set name="tags" value="test,obsidian" path="obsidian-test-one.md" vault="$VAULT_NAME" 2>/dev/null
+sleep 1
 Obsidian property:set name="aliases" value="test-alias" path="obsidian-test-one.md" vault="$VAULT_NAME" 2>/dev/null
+sleep 1
 Obsidian property:set name="cssclasses" value="wide" path="obsidian-test-one.md" vault="$VAULT_NAME" 2>/dev/null
+sleep 2  # let Obsidian write all properties to disk
 
-sleep 1  # let Obsidian write
+# Verify Obsidian actually wrote the frontmatter before we sync
+echo "  (file before sync:)"
+head -10 "$VAULT/docs/obsidian-test-one.md" 2>/dev/null | grep -E 'tags|aliases|css' || echo "  WARNING: frontmatter not on disk yet"
 
 # Now run maitake sync — should NOT destroy Obsidian's frontmatter
 mai docs sync 2>/dev/null
