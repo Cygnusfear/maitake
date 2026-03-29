@@ -178,11 +178,7 @@ func handleFileDelete(w watchedRepo, filePath string) {
 	// by scanning the note index for docs targeting this path
 	rel, _ := filepath.Rel(w.path, filePath)
 
-	repo, err := git.NewGitRepo(w.path)
-	if err != nil {
-		return
-	}
-	engine, err := notes.NewEngine(repo)
+	engine, err := getOrCreateEngine(w.path)
 	if err != nil {
 		return
 	}
@@ -209,16 +205,30 @@ func handleFileDelete(w watchedRepo, filePath string) {
 
 
 
-func syncFile(w watchedRepo, filePath string) {
-	repo, err := git.NewGitRepo(w.path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "  error: %s not a git repo\n", w.path)
-		return
-	}
+// engineCache holds cached engines per repo path to avoid rebuilding
+// the index on every file event.
+var engineCache = make(map[string]notes.Engine)
 
+func getOrCreateEngine(repoPath string) (notes.Engine, error) {
+	if e, ok := engineCache[repoPath]; ok {
+		return e, nil
+	}
+	repo, err := git.NewGitRepo(repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("%s not a git repo", repoPath)
+	}
 	engine, err := notes.NewEngine(repo)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  error: engine init: %v\n", err)
+		return nil, fmt.Errorf("engine init: %w", err)
+	}
+	engineCache[repoPath] = engine
+	return engine, nil
+}
+
+func syncFile(w watchedRepo, filePath string) {
+	engine, err := getOrCreateEngine(w.path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		return
 	}
 
@@ -266,16 +276,32 @@ func loadRepoList() []string {
 	if err != nil {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".maitake", "repos"))
+	reposFile := filepath.Join(home, ".maitake", "repos")
+	data, err := os.ReadFile(reposFile)
 	if err != nil {
 		return nil
 	}
 	var repos []string
+	var alive []string
+	pruned := false
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			repos = append(repos, line)
+		if line == "" {
+			continue
 		}
+		if _, err := os.Stat(filepath.Join(line, ".git")); err != nil {
+			// Also check for worktree .git file
+			if _, err2 := os.Stat(line); err2 != nil {
+				pruned = true
+				continue // path doesn't exist — prune it
+			}
+		}
+		repos = append(repos, line)
+		alive = append(alive, line)
+	}
+	// Write back pruned list
+	if pruned {
+		os.WriteFile(reposFile, []byte(strings.Join(alive, "\n")+"\n"), 0644)
 	}
 	return repos
 }
