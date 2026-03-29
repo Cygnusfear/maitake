@@ -215,6 +215,8 @@ type Engine interface {
 	BranchUse(name string) error
 	BranchMerge(name string) error
 	CurrentBranch() string
+	GitBranch() string
+	IsMerged(from, into string) bool
 	Doctor() (*DoctorReport, error)
 	Rebuild() error
 	Sync() error

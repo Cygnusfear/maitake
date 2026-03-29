@@ -569,6 +569,21 @@ func (e *RealEngine) currentGitBranch() string {
 	return strings.TrimPrefix(ref, "refs/heads/")
 }
 
+// GitBranch returns the current git branch name (e.g. "feature/auth").
+func (e *RealEngine) GitBranch() string {
+	return e.currentGitBranch()
+}
+
+// IsMerged checks if the 'from' branch has been merged into 'into'.
+// Uses git merge-base --is-ancestor.
+func (e *RealEngine) IsMerged(from, into string) bool {
+	merged, err := e.repo.IsAncestor(from, into)
+	if err != nil {
+		return false
+	}
+	return merged
+}
+
 // GetConfig returns the current configuration.
 func (e *RealEngine) GetConfig() Config {
 	return e.config

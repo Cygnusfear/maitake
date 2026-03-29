@@ -761,6 +761,117 @@ func runDoctor(e notes.Engine, args []string) {
 	}
 }
 
+func runPRCreate(e notes.Engine, args []string) {
+	// Extract --into before parseFlags (PR-specific flag)
+	intoBranch := "main"
+	var filteredArgs []string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--into" && i+1 < len(args) {
+			intoBranch = args[i+1]
+			i++ // skip value
+		} else {
+			filteredArgs = append(filteredArgs, args[i])
+		}
+	}
+
+	f, pos := parseFlags(filteredArgs)
+
+	if f.help {
+		fmt.Fprintln(os.Stderr, `Usage: mai pr [title] [flags]
+
+Create a pull request note for the current branch.
+
+Flags:
+      --into <branch>   Target branch (default: main)
+  -d, --description     PR description
+  -a, --assignee        Reviewer
+  -l, --tags            Tags
+
+Examples:
+  mai pr "Add auth middleware" --into main
+  mai pr "Fix login" -a reviewer -d "Fixes the token refresh race"`)
+		return
+	}
+
+	title := f.title
+	if title == "" && len(pos) > 0 {
+		title = pos[0]
+	}
+
+	// Detect source branch from HEAD
+	fromBranch := e.GitBranch()
+	if fromBranch == "" || fromBranch == "HEAD" {
+		fatal("pr: not on a branch (detached HEAD)")
+	}
+
+	if fromBranch == intoBranch {
+		fatal("pr: source and target are the same branch (%s)", fromBranch)
+	}
+
+	if title == "" {
+		title = fmt.Sprintf("%s → %s", fromBranch, intoBranch)
+	}
+
+	body := f.body
+	if body == "" {
+		body = fmt.Sprintf("# %s\n\nMerge `%s` into `%s`.", title, fromBranch, intoBranch)
+	}
+
+	// Create the PR note
+	note, err := e.Create(notes.CreateOptions{
+		Kind:     "pr",
+		Title:    title,
+		Body:     body,
+		Priority: f.priority,
+		Assignee: f.assignee,
+		Tags:     f.tags,
+		Targets:  []string{fromBranch, intoBranch},
+	})
+	if err != nil {
+		fatal("pr: %v", err)
+	}
+
+	fmt.Printf("%s  %s → %s\n", note.ID, fromBranch, intoBranch)
+}
+
+func runPRList(e notes.Engine) {
+	states, _ := e.Find(notes.FindOptions{Kind: "pr"})
+
+	if len(states) == 0 {
+		fmt.Println("No open PRs.")
+		return
+	}
+
+	for _, s := range states {
+		from, into := prBranches(&s)
+		merged := ""
+		if e.IsMerged(from, into) {
+			merged = " ✓ merged"
+		}
+
+		status := s.Status
+		if globalJSON {
+			continue // handled below
+		}
+		fmt.Printf("%s [%-11s] %s → %s%s  %s\n", s.ID, status, from, into, merged, s.Title)
+	}
+
+	if globalJSON {
+		printJSON(states)
+	}
+}
+
+// prBranches extracts source and target branches from a PR note's targets.
+func prBranches(s *notes.State) (from, into string) {
+	if len(s.Targets) >= 2 {
+		return s.Targets[0], s.Targets[1]
+	}
+	if len(s.Targets) == 1 {
+		return s.Targets[0], "main"
+	}
+	return "?", "?"
+}
+
 func runPurge(e notes.Engine, kind, status string) {
 	filter := notes.FindOptions{}
 	if kind != "" {
