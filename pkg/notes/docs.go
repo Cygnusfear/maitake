@@ -166,12 +166,13 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 		result.Imported = append(result.Imported, df.Path)
 	}
 
-	// 5. Handle closed/deleted doc notes — remove materialized files
+	// 5. Handle closed doc notes — mark closed in frontmatter, keep the file.
+	// We do NOT delete the file; Obsidian/editors would throw a delete modal.
 	for id := range closedIDs {
 		if df, exists := diskFiles[id]; exists {
 			if !dryRun {
 				absPath := filepath.Join(repoPath, df.Path)
-				os.Remove(absPath)
+				markDocFileClosed(absPath, id)
 			}
 			result.Removed = append(result.Removed, df.Path)
 		}
@@ -233,12 +234,104 @@ func parseMaiFrontmatter(content string) (noteID, body string) {
 	return noteID, body
 }
 
-// writeDocFile writes a markdown file with mai-id frontmatter.
+// parseAllFrontmatter extracts all frontmatter lines and the body from a YAML
+// frontmatter block. Consistent with parseMaiFrontmatter in parsing rules.
+func parseAllFrontmatter(content string) (fmLines []string, body string, ok bool) {
+	if !strings.HasPrefix(content, "---\n") {
+		return nil, content, false
+	}
+	end := strings.Index(content[4:], "\n---\n")
+	if end < 0 {
+		end = strings.Index(content[4:], "\n---")
+		if end < 0 {
+			return nil, content, false
+		}
+	}
+	fmBlock := content[4 : 4+end]
+	body = strings.TrimLeft(content[4+end+4:], "\n")
+	if fmBlock == "" {
+		return []string{}, body, true
+	}
+	return strings.Split(fmBlock, "\n"), body, true
+}
+
+// writeDocFile writes a markdown file preserving all existing Obsidian
+// frontmatter fields. Only the mai-id field is added or updated; all other
+// fields (tags, aliases, cssclasses, date, etc.) are kept as-is.
+// If the file does not exist, writes a minimal frontmatter with just mai-id.
 func writeDocFile(absPath, noteID, body string) error {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		return err
 	}
+
+	// Try to read and preserve existing frontmatter.
+	existing, err := os.ReadFile(absPath)
+	if err == nil {
+		fmLines, _, ok := parseAllFrontmatter(string(existing))
+		if ok {
+			maidFound := false
+			var newLines []string
+			for _, line := range fmLines {
+				if strings.HasPrefix(strings.TrimSpace(line), "mai-id:") {
+					newLines = append(newLines, "mai-id: "+noteID)
+					maidFound = true
+				} else {
+					newLines = append(newLines, line)
+				}
+			}
+			if !maidFound {
+				newLines = append(newLines, "mai-id: "+noteID)
+			}
+			fm := strings.Join(newLines, "\n")
+			content := fmt.Sprintf("---\n%s\n---\n%s\n", fm, body)
+			return os.WriteFile(absPath, []byte(content), 0644)
+		}
+	}
+
+	// File doesn't exist or has no frontmatter — write minimal frontmatter.
 	content := fmt.Sprintf("---\nmai-id: %s\n---\n%s\n", noteID, body)
+	return os.WriteFile(absPath, []byte(content), 0644)
+}
+
+// markDocFileClosed adds closed: true to the frontmatter of a doc file,
+// keeping the file and all other frontmatter fields intact.
+// If the file does not exist, does nothing.
+func markDocFileClosed(absPath, noteID string) error {
+	existing, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil // file already gone, nothing to mark
+	}
+
+	fmLines, body, ok := parseAllFrontmatter(string(existing))
+	if !ok {
+		// No frontmatter — create one with mai-id and closed.
+		content := fmt.Sprintf("---\nmai-id: %s\nclosed: true\n---\n%s\n", noteID, body)
+		return os.WriteFile(absPath, []byte(content), 0644)
+	}
+
+	maidFound, closedFound := false, false
+	var newLines []string
+	for _, line := range fmLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "mai-id:") {
+			newLines = append(newLines, "mai-id: "+noteID)
+			maidFound = true
+		} else if strings.HasPrefix(trimmed, "closed:") {
+			newLines = append(newLines, "closed: true")
+			closedFound = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+	if !maidFound {
+		newLines = append(newLines, "mai-id: "+noteID)
+	}
+	if !closedFound {
+		newLines = append(newLines, "closed: true")
+	}
+
+	fm := strings.Join(newLines, "\n")
+	content := fmt.Sprintf("---\n%s\n---\n%s\n", fm, body)
 	return os.WriteFile(absPath, []byte(content), 0644)
 }
 

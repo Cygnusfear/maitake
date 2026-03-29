@@ -724,8 +724,38 @@ func (e *RealEngine) initYDoc(noteID, body string, ref git.NotesRef, targetOID g
 	e.index.Build()
 }
 
-// Only writes when the file doesn't exist or matches the previous note body.
-// Never overwrites a file that the user edited (file wins on conflict).
+// prevNoteBody returns the note body as it was BEFORE the most recent body
+// event. Used by autoSyncDoc to tell apart a stale file (note just changed)
+// from a file the user independently edited (file wins on conflict).
+func (e *RealEngine) prevNoteBody(noteID string) string {
+	creation := e.index.CreationNotes[noteID]
+	state := e.index.States[noteID]
+	if creation == nil || state == nil {
+		return ""
+	}
+	// Walk events in order, tracking body before the last body event.
+	cur := creation.Body
+	prev := cur
+	for _, ev := range state.Events {
+		if ev.Kind == "event" && ev.Field == "body" {
+			prev = cur
+			b := ev.Value
+			if ev.Body != "" {
+				b = ev.Body
+			}
+			cur = b
+		}
+	}
+	return prev
+}
+
+// autoSyncDoc materializes a doc note to disk when docs.sync is "auto".
+//
+// Write policy:
+//   - closed note  → mark closed: true in frontmatter, keep the file
+//   - file missing → write it
+//   - file matches PREVIOUS note body → note just changed, overwrite with new body
+//   - file differs from PREVIOUS body → user edited the file, leave it for full sync
 func (e *RealEngine) autoSyncDoc(noteID string) {
 	if e.config.Docs.Sync != "auto" {
 		return
@@ -740,16 +770,19 @@ func (e *RealEngine) autoSyncDoc(noteID string) {
 	absPath := filepath.Join(e.repoPath, targetPath)
 
 	if state.Status == "closed" {
-		os.Remove(absPath)
+		markDocFileClosed(absPath, state.ID)
 		return
 	}
 
-	// If file exists and has different content, don't overwrite — file wins.
-	// The next mai docs sync (or daemon) will reconcile.
+	// If the file exists, compare its body to what the note looked like BEFORE
+	// the most recent edit. If they match, the file is just stale — safe to
+	// overwrite. If they differ, the user edited the file independently; leave
+	// it for the next full docs sync.
 	if data, err := os.ReadFile(absPath); err == nil {
 		_, existingBody := parseMaiFrontmatter(string(data))
-		if contentHash(existingBody) != contentHash(state.Body) {
-			return // file diverged, don't clobber
+		prevBody := e.prevNoteBody(noteID)
+		if contentHash(existingBody) != contentHash(prevBody) {
+			return // file was independently edited — don't clobber
 		}
 	}
 
