@@ -156,7 +156,9 @@ func TestDocsSync_FileEditSurvivesRestart(t *testing.T) {
 	}
 }
 
-func TestDocsSync_CloseRemovesFile(t *testing.T) {
+// TestDocsSync_CloseMarksFrontmatter verifies that closing a doc note keeps
+// the file on disk and adds closed: true to frontmatter (not os.Remove).
+func TestDocsSync_CloseMarksFrontmatter(t *testing.T) {
 	dir := setupRepo(t)
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
@@ -164,17 +166,16 @@ func TestDocsSync_CloseRemovesFile(t *testing.T) {
 	note, _ := engine.Create(notes.CreateOptions{
 		Kind:  "doc",
 		Title: "Temporary",
-		Body:  "Will be removed.",
+		Body:  "Will be marked closed.",
 	})
 	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
 
-	// File should exist
 	filePath := filepath.Join(dir, "docs", "temporary.md")
 	if _, err := os.Stat(filePath); err != nil {
 		t.Fatal("file should exist after sync")
 	}
 
-	// Close the note (auto-sync may remove file immediately)
+	// Close the note.
 	engine.Append(notes.AppendOptions{
 		TargetID: note.ID,
 		Kind:     "event",
@@ -182,11 +183,20 @@ func TestDocsSync_CloseRemovesFile(t *testing.T) {
 		Value:    "closed",
 	})
 
-	// Sync to ensure removal (may be no-op if auto-sync already did it)
+	// Sync to ensure closed marking.
 	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
 
-	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-		t.Error("file should be removed after closing doc note")
+	// File must still exist — we mark it, not delete it.
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal("file should still exist after closing doc note (not deleted)")
+	}
+	content := string(data)
+	if !strings.Contains(content, "closed: true") {
+		t.Errorf("closed frontmatter field missing.\nGot:\n%s", content)
+	}
+	if !strings.Contains(content, "mai-id:") {
+		t.Error("mai-id frontmatter should still be present")
 	}
 }
 
@@ -238,5 +248,59 @@ func TestDocsSync_DeleteAndRestore(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Survives rm -rf") {
 		t.Error("restored file should have original content")
+	}
+}
+
+// TestDocsSync_NoteEditUpdatesFile verifies that a body edit via Append()
+// (e.g. mai edit <doc-id>) materializes to disk via auto-sync.
+// This was the root bug: autoSyncDoc compared file vs NEW body (always differed
+// right after an edit) instead of file vs PREVIOUS body.
+func TestDocsSync_NoteEditUpdatesFile(t *testing.T) {
+	dir := setupRepo(t)
+	repo, _ := git.NewGitRepo(dir)
+
+	cfgFile := filepath.Join(dir, ".maitake", "config.yaml")
+	os.MkdirAll(filepath.Dir(cfgFile), 0755)
+	os.WriteFile(cfgFile, []byte("docs:\n  dir: docs\n  sync: auto\n"), 0644)
+
+	engine, _ := notes.NewEngine(repo)
+
+	// Create doc note (auto-sync writes the file).
+	note, err := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "Autosync",
+		Body:  "Original body.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filePath := filepath.Join(dir, "docs", "autosync.md")
+	if _, err := os.Stat(filePath); err != nil {
+		t.Skip("auto-sync not active (no docs.sync=auto config) — skipping")
+	}
+
+	// Edit the note body via Append (simulates mai edit).
+	_, err = engine.Append(notes.AppendOptions{
+		TargetID: note.ID,
+		Kind:     "event",
+		Field:    "body",
+		Body:     "Updated body from mai edit.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// File must reflect the note-side edit — no full docs sync needed.
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal("file should still exist after note edit")
+	}
+	body := string(data)
+	if !strings.Contains(body, "Updated body from mai edit") {
+		t.Errorf("note-side body edit should update file via auto-sync.\nFile:\n%s", body)
+	}
+	if strings.Contains(body, "Original body") {
+		t.Errorf("old body should be gone from file.\nFile:\n%s", body)
 	}
 }
