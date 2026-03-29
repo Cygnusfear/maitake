@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -26,10 +25,16 @@ type DocSyncResult struct {
 	Removed   []string // files removed (note deleted/closed)
 }
 
+// DocSyncOptions controls sync behavior.
+type DocSyncOptions struct {
+	DryRun bool // compute what would happen without writing
+}
+
 // SyncDocs performs bidirectional sync between doc notes and markdown files.
-func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, error) {
+func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOptions) (*DocSyncResult, error) {
+	dryRun := len(opts) > 0 && opts[0].DryRun
 	if cfg.Dir == "" {
-		cfg.Dir = "docs"
+		cfg.Dir = ".mai-docs"
 	}
 	docsDir := filepath.Join(repoPath, cfg.Dir)
 	result := &DocSyncResult{}
@@ -97,22 +102,23 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 			if df.Hash == noteHash {
 				continue // in sync
 			}
-			// File changed — check if note also changed
-			// For now: file wins (Obsidian edits are the common case)
-			_, err := engine.Append(AppendOptions{
-				TargetID: id,
-				Kind:     "event",
-				Field:    "body",
-				Value:    df.Content,
-			})
-			if err == nil {
-				result.Updated = append(result.Updated, df.Path)
+			// File changed — file wins (Obsidian edits are the common case)
+			if !dryRun {
+				engine.Append(AppendOptions{
+					TargetID: id,
+					Kind:     "event",
+					Field:    "body",
+					Value:    df.Content,
+				})
 			}
+			result.Updated = append(result.Updated, df.Path)
 		} else {
 			// Note exists, no file — write it
-			absPath := filepath.Join(repoPath, targetPath)
-			if err := writeDocFile(absPath, id, state.Body); err != nil {
-				continue
+			if !dryRun {
+				absPath := filepath.Join(repoPath, targetPath)
+				if err := writeDocFile(absPath, id, state.Body); err != nil {
+					continue
+				}
 			}
 			result.Written = append(result.Written, targetPath)
 		}
@@ -121,6 +127,10 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 	// 4. Disk → notes: import files without mai-id as doc notes.
 	// Preserves the original file path as the target edge.
 	for _, df := range newFiles {
+		if dryRun {
+			result.Imported = append(result.Imported, df.Path)
+			continue
+		}
 		title := titleFromPath(df.Path)
 		note, err := engine.Create(CreateOptions{
 			Kind:    "doc",
@@ -131,7 +141,6 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 		if err != nil {
 			continue
 		}
-		// Rewrite the file with frontmatter
 		absPath := filepath.Join(repoPath, df.Path)
 		writeDocFile(absPath, note.ID, df.Content)
 		result.Imported = append(result.Imported, df.Path)
@@ -140,8 +149,10 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig) (*DocSyncResult, e
 	// 5. Handle closed/deleted doc notes — remove materialized files
 	for id := range closedIDs {
 		if df, exists := diskFiles[id]; exists {
-			absPath := filepath.Join(repoPath, df.Path)
-			os.Remove(absPath)
+			if !dryRun {
+				absPath := filepath.Join(repoPath, df.Path)
+				os.Remove(absPath)
+			}
 			result.Removed = append(result.Removed, df.Path)
 		}
 	}
@@ -281,12 +292,6 @@ func RemoveTombstone(repoPath, noteID string) {
 		}
 	}
 	os.WriteFile(tsFile, []byte(strings.Join(lines, "\n")+"\n"), 0644)
-}
-
-// isGitTracked checks if a file is tracked by git (exists in the index).
-func isGitTracked(repoPath, relPath string) bool {
-	cmd := exec.Command("git", "-C", repoPath, "ls-files", "--error-unmatch", relPath)
-	return cmd.Run() == nil
 }
 
 func titleFromPath(path string) string {

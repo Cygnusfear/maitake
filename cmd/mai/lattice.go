@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cygnusfear/maitake/pkg/notes"
@@ -16,11 +17,17 @@ func runDocsSync(e notes.Engine, args []string) {
 	}
 
 	cfg := notes.DocsConfig{}
+	dryRun := false
 
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--dir" && i+1 < len(args) {
+		switch args[i] {
+		case "--dir":
 			i++
-			cfg.Dir = args[i]
+			if i < len(args) {
+				cfg.Dir = args[i]
+			}
+		case "--dry-run", "-n":
+			dryRun = true
 		}
 	}
 
@@ -32,6 +39,40 @@ func runDocsSync(e notes.Engine, args []string) {
 		}
 	}
 
+	// Warn if docs dir isn't gitignored
+	warnIfNotGitignored(dir, cfg.Dir)
+
+	// Dry-run first to preview
+	preview, err := notes.SyncDocs(e, dir, cfg, notes.DocSyncOptions{DryRun: true})
+	if err != nil {
+		fatal("docs sync: %v", err)
+	}
+
+	total := len(preview.Written) + len(preview.Imported) + len(preview.Updated) + len(preview.Removed)
+	if total == 0 {
+		fmt.Println("Everything in sync.")
+		return
+	}
+
+	// Print preview
+	printSyncResult(preview, dryRun)
+
+	if dryRun {
+		return
+	}
+
+	// Confirm if >10 files affected
+	if total > 10 {
+		fmt.Printf("\n%d files will be affected. Continue? [y/N] ", total)
+		var answer string
+		fmt.Scanln(&answer)
+		if answer != "y" && answer != "Y" {
+			fmt.Println("Aborted.")
+			return
+		}
+	}
+
+	// Execute for real
 	result, err := notes.SyncDocs(e, dir, cfg)
 	if err != nil {
 		fatal("docs sync: %v", err)
@@ -42,27 +83,59 @@ func runDocsSync(e notes.Engine, args []string) {
 		return
 	}
 
-	total := len(result.Written) + len(result.Imported) + len(result.Updated) + len(result.Removed)
-	if total == 0 {
-		fmt.Println("Everything in sync.")
+	printSyncResult(result, false)
+}
+
+func warnIfNotGitignored(repoPath, docsDir string) {
+	if docsDir == "" {
+		docsDir = ".mai-docs"
+	}
+	gitignorePath := filepath.Join(repoPath, ".gitignore")
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  No .gitignore found. Run 'mai init' to gitignore %s/\n", docsDir)
 		return
 	}
+	if !strings.Contains(string(data), docsDir) {
+		fmt.Fprintf(os.Stderr, "⚠️  %s/ is not in .gitignore — docs may collide with git. Run 'mai init' to fix.\n", docsDir)
+	}
+}
 
-	for _, f := range result.Written {
-		fmt.Printf("  → %s (written from note)\n", f)
-	}
-	for _, f := range result.Imported {
-		fmt.Printf("  ← %s (imported as note)\n", f)
-	}
-	for _, f := range result.Updated {
-		fmt.Printf("  ↔ %s (note updated from file)\n", f)
-	}
-	for _, f := range result.Removed {
-		fmt.Printf("  ✗ %s (removed, note closed)\n", f)
+func printSyncResult(result *notes.DocSyncResult, dryRun bool) {
+	prefix := ""
+	if dryRun {
+		prefix = "(dry-run) "
 	}
 
-	fmt.Printf("\n%d written, %d imported, %d updated, %d removed\n",
-		len(result.Written), len(result.Imported), len(result.Updated), len(result.Removed))
+	if len(result.Written) > 0 {
+		fmt.Printf("\n%s=== Write from notes → disk (%d files) ===\n", prefix, len(result.Written))
+		for _, f := range result.Written {
+			fmt.Printf("  → %s\n", f)
+		}
+	}
+	if len(result.Imported) > 0 {
+		fmt.Printf("\n%s=== Import from disk → notes (%d files) ===\n", prefix, len(result.Imported))
+		for _, f := range result.Imported {
+			fmt.Printf("  ← %s\n", f)
+		}
+	}
+	if len(result.Updated) > 0 {
+		fmt.Printf("\n%s=== Updated notes from files (%d files) ===\n", prefix, len(result.Updated))
+		for _, f := range result.Updated {
+			fmt.Printf("  ↔ %s\n", f)
+		}
+	}
+	if len(result.Removed) > 0 {
+		fmt.Printf("\n%s=== Removed (%d files) ===\n", prefix, len(result.Removed))
+		for _, f := range result.Removed {
+			fmt.Printf("  ✗ %s\n", f)
+		}
+	}
+
+	total := len(result.Written) + len(result.Imported) + len(result.Updated) + len(result.Removed)
+	fmt.Printf("\n%s%d written, %d imported, %d updated, %d removed\n",
+		prefix, len(result.Written), len(result.Imported), len(result.Updated), len(result.Removed))
+	_ = total
 }
 
 func runCheck(e notes.Engine, args []string) {

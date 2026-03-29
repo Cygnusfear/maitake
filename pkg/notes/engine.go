@@ -117,6 +117,25 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		})
 	}
 
+	// Doc notes without a target get an auto-derived path so docTargetPath
+	// never falls back to slugifying at write time
+	if opts.Kind == "doc" && len(opts.Targets) == 0 {
+		cfg := ReadConfig(filepath.Join(e.repoPath, ".maitake"))
+		docsDir := cfg.Docs.Dir
+		if docsDir == "" {
+			docsDir = ".mai-docs"
+		}
+		slug := slugify(note.Title)
+		if slug == "" {
+			slug = note.ID
+		}
+		autoPath := filepath.Join(docsDir, slug+".md")
+		note.Edges = append(note.Edges, Edge{
+			Type:   "targets",
+			Target: EdgeTarget{Kind: "path", Ref: autoPath},
+		})
+	}
+
 	// Set default status based on type
 	if note.Status == "" {
 		if note.Type == "artifact" {

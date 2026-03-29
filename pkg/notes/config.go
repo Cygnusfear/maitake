@@ -24,7 +24,7 @@ type SyncConfig struct {
 // DocsConfig controls doc materialization.
 type DocsConfig struct {
 	Sync  string `toml:"sync"`  // "auto" | "manual" | "off" (default: "manual")
-	Dir   string `toml:"dir"`   // docs directory (default: "docs")
+	Dir   string `toml:"dir"`   // docs directory (default: ".mai-docs")
 	Watch bool   `toml:"watch"` // daemon watches this repo
 }
 
@@ -88,7 +88,7 @@ func defaultConfig() Config {
 	return Config{
 		Docs: DocsConfig{
 			Sync:  "auto",
-			Dir:   "docs",
+			Dir:   ".mai-docs",
 			Watch: true,
 		},
 		Hooks: HooksConfig{

@@ -39,13 +39,13 @@ func TestConfig_WriteAndReadTOML(t *testing.T) {
 	}
 }
 
-func TestConfig_ReadMissing(t *testing.T) {
-	cfg := ReadConfig("/nonexistent/dir")
+func TestConfig_Defaults(t *testing.T) {
+	cfg := defaultConfig()
 	if cfg.Sync.Remote != "" {
 		t.Errorf("Remote = %q, want empty", cfg.Sync.Remote)
 	}
-	if cfg.Docs.Dir != "docs" {
-		t.Errorf("Docs.Dir = %q, want docs (default)", cfg.Docs.Dir)
+	if cfg.Docs.Dir != ".mai-docs" {
+		t.Errorf("Docs.Dir = %q, want .mai-docs (default)", cfg.Docs.Dir)
 	}
 	if cfg.Docs.Sync != "auto" {
 		t.Errorf("Docs.Sync = %q, want auto (default)", cfg.Docs.Sync)

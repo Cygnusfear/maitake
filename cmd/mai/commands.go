@@ -62,18 +62,34 @@ func runInit(args []string) {
 		fmt.Printf("Blocked hosts: %s\n", strings.Join(cfg.Sync.BlockedHosts, ", "))
 	}
 
-	// Add .maitake/ to .gitignore if not already there
+	// Add .maitake/ and docs dir to .gitignore if not already there
 	gitignorePath := cwd + "/.gitignore"
 	existing, _ := os.ReadFile(gitignorePath)
-	if !strings.Contains(string(existing), ".maitake/") {
+	content := string(existing)
+
+	var toAdd []string
+	if !strings.Contains(content, ".maitake/") {
+		toAdd = append(toAdd, ".maitake/")
+	}
+	docsDir := cfg.Docs.Dir
+	if docsDir == "" {
+		docsDir = ".mai-docs"
+	}
+	if !strings.Contains(content, docsDir) {
+		toAdd = append(toAdd, docsDir+"/")
+	}
+
+	if len(toAdd) > 0 {
 		f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {
-			if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+			if len(existing) > 0 && !strings.HasSuffix(content, "\n") {
 				f.WriteString("\n")
 			}
-			f.WriteString(".maitake/\n")
+			for _, entry := range toAdd {
+				f.WriteString(entry + "\n")
+			}
 			f.Close()
-			fmt.Println("Added .maitake/ to .gitignore")
+			fmt.Printf("Added %s to .gitignore\n", strings.Join(toAdd, ", "))
 		}
 	}
 }
