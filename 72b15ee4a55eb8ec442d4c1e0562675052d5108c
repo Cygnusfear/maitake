@@ -7,3 +7,5 @@
 {"id":"ptw-nwxc","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-eu3f"}}],"body":"DONE: Created test/pr_test.go with all 29 test cases passing. Added GIT_EDITOR=true to test helpers to prevent git merge -e from opening an interactive editor. All existing tests still pass. Committed as 54bf4b5.","timestamp":"2026-03-29T13:02:09Z","branch":"teams/pr-test-writer/mai-eu3f"}
 
 {"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-eu3f"}}],"timestamp":"2026-03-29T13:02:09Z","branch":"teams/pr-test-writer/mai-eu3f"}
+
+{"id":"ptw-3a1m","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-eu3f"}}],"body":"DONE: Task completed.","timestamp":"2026-03-29T13:02:23Z","branch":"teams/pr-test-writer/mai-eu3f"}
