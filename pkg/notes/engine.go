@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cygnusfear/maitake/pkg/crdt"
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/guard"
 )
@@ -171,6 +173,11 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	// Update index
 	e.index.Ingest(note)
 	e.index.Build()
+
+	// For doc notes, initialize CRDT state from body
+	if opts.Kind == "doc" && opts.Body != "" {
+		e.initYDoc(note.ID, opts.Body, ref, targetOID)
+	}
 
 	// Update cache with new ref tip
 	e.updateCache(ref)
@@ -586,6 +593,48 @@ func (e *RealEngine) Sync() error {
 }
 
 // autoSyncDoc materializes a doc note to disk if docs.sync is "auto".
+
+// initYDoc creates a YDoc from body text and stores its state as a ydoc event.
+func (e *RealEngine) initYDoc(noteID, body string, ref git.NotesRef, targetOID git.OID) {
+	doc, err := crdt.New()
+	if err != nil {
+		return // CRDT not available, skip silently
+	}
+	defer doc.Close()
+
+	if err := doc.Insert(0, body); err != nil {
+		return
+	}
+	state, err := doc.Save()
+	if err != nil {
+		return
+	}
+
+	// Emit ydoc event with base64-encoded state
+	encoded := base64.StdEncoding.EncodeToString(state)
+	ydocNote := &Note{
+		Kind:      "event",
+		Field:     "ydoc",
+		Value:     encoded,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Branch:    e.currentGitBranch(),
+		Edges: []Edge{{
+			Type:   "updates",
+			Target: EdgeTarget{Kind: "note", Ref: noteID},
+		}},
+	}
+	data, err := Serialize(ydocNote)
+	if err != nil {
+		return
+	}
+	if err := e.repo.AppendNote(ref, targetOID, git.Note(data)); err != nil {
+		return
+	}
+	// Re-ingest so fold sees it in current session
+	e.index.Ingest(ydocNote)
+	e.index.Build()
+}
+
 // Only writes when the file doesn't exist or matches the previous note body.
 // Never overwrites a file that the user edited (file wins on conflict).
 func (e *RealEngine) autoSyncDoc(noteID string) {

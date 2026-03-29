@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"encoding/base64"
 	"sort"
 	"strings"
 )
@@ -162,6 +163,10 @@ func applyFieldChange(state *State, field, value string) {
 		state.Title = value
 	case "body":
 		state.Body = value
+	case "ydoc":
+		if decoded, err := base64.StdEncoding.DecodeString(value); err == nil {
+			state.YDocState = decoded
+		}
 	case "tags":
 		applyTagChange(state, value)
 	case "deps":
