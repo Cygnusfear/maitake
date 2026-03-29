@@ -61,8 +61,20 @@ func runDaemon(args []string) {
 
 	fmt.Printf("\nmai daemon: watching %d repo(s). ctrl-c to stop.\n\n", len(watched))
 
-	// Debounce: collect file changes, sync after 500ms of quiet
+	// Debounce write/create: collect file changes, sync after 500ms of quiet.
 	debounce := make(map[string]time.Time) // file path → last change time
+
+	// Debounce delete: wait deleteDebounceDur before tombstoning.
+	// Many editors (vim, VS Code) do atomic saves: write temp → rename to target,
+	// which emits Remove + Create. We hold deletes in a pending map and cancel
+	// the tombstone if the file reappears within the quiet window.
+	const deleteDebounceDur = 500 * time.Millisecond
+	type pendingDel struct {
+		repo watchedRepo
+		at   time.Time
+	}
+	pendingDeletes := make(map[string]pendingDel) // file path → pending delete
+
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -103,16 +115,18 @@ func runDaemon(args []string) {
 			}
 
 			if event.Op&fsnotify.Remove != 0 {
-				// File intentionally deleted — tombstone so sync doesn't recreate
-				handleFileDelete(*matchedRepo, event.Name)
+				// Hold the delete — only tombstone after the quiet window.
+				// Atomic-save editors emit Remove then Create; we'll cancel
+				// the pending delete when the Create arrives.
+				pendingDeletes[event.Name] = pendingDel{*matchedRepo, time.Now()}
 				continue
 			}
 
-			if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
-				continue
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				// File appeared — cancel any pending delete (atomic save).
+				delete(pendingDeletes, event.Name)
+				debounce[event.Name] = time.Now()
 			}
-
-			debounce[event.Name] = time.Now()
 
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -121,7 +135,7 @@ func runDaemon(args []string) {
 			fmt.Fprintf(os.Stderr, "watch error: %v\n", err)
 
 		case now := <-ticker.C:
-			// Process debounced changes
+			// Process debounced writes/creates
 			for path, changed := range debounce {
 				if now.Sub(changed) < 500*time.Millisecond {
 					continue
@@ -134,6 +148,18 @@ func runDaemon(args []string) {
 						syncFile(w, path)
 						break
 					}
+				}
+			}
+
+			// Process debounced deletes — tombstone only if file still gone
+			for path, pd := range pendingDeletes {
+				if now.Sub(pd.at) < deleteDebounceDur {
+					continue
+				}
+				delete(pendingDeletes, path)
+				// Only tombstone if the file is STILL gone
+				if _, err := os.Stat(path); os.IsNotExist(err) {
+					handleFileDelete(pd.repo, path)
 				}
 			}
 		}

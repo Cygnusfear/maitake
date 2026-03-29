@@ -256,3 +256,71 @@ func TestDaemon_MultipleRapidEditsAfterRmRf(t *testing.T) {
 		}
 	}
 }
+
+// TestDaemon_AtomicSaveDoesNotTombstone verifies that an atomic editor save
+// (Remove then quick Create) does NOT tombstone the note.
+// Many editors (vim, VS Code) write a temp file then rename it to the target,
+// which emits fsnotify.Remove + fsnotify.Create. Without debouncing the
+// daemon would tombstone on the Remove, losing the doc.
+func TestDaemon_AtomicSaveDoesNotTombstone(t *testing.T) {
+	dir := setupRepo(t)
+	repo, _ := git.NewGitRepo(dir)
+	engine, _ := notes.NewEngine(repo)
+	cfg := notes.DocsConfig{Dir: "docs"}
+
+	// Create doc note and materialize file.
+	note, _ := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "Atomic",
+		Body:  "Before atomic save.",
+	})
+	notes.SyncDocs(engine, dir, cfg)
+
+	filePath := filepath.Join(dir, "docs", "atomic.md")
+	if _, err := os.Stat(filePath); err != nil {
+		t.Fatal("file must exist before test")
+	}
+
+	// Simulate an atomic save: remove the file and recreate it within 100ms.
+	// This mimics what vim/VS Code do on save.
+	origContent, _ := os.ReadFile(filePath)
+	newContent := []byte(string(origContent) + "\nAtomically saved.")
+
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // small gap, well inside 500ms debounce
+	if err := os.WriteFile(filePath, newContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The debounce window is 500ms; we wait for it to expire plus a margin.
+	// At this point the Create arrived BEFORE the debounce fired, so no tombstone.
+	time.Sleep(700 * time.Millisecond)
+
+	// Note must NOT be tombstoned.
+	// Check: running SyncDocs should restore (write) the file if tombstoned.
+	// If not tombstoned, the file should still exist and a fresh sync sees it
+	// as "in sync" or "updated" — not needing to re-write it from the note.
+	repo2, _ := git.NewGitRepo(dir)
+	engine2, _ := notes.NewEngine(repo2)
+
+	state, err := engine2.Fold(note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Status == "closed" {
+		t.Error("note should NOT be closed (tombstone implies closed/deleted)")
+	}
+
+	// The tombstone file must NOT contain this note's ID.
+	tsData, _ := os.ReadFile(filepath.Join(dir, ".maitake", "tombstones"))
+	if strings.Contains(string(tsData), note.ID) {
+		t.Errorf("note %s must NOT be tombstoned after atomic save; tombstones:\n%s", note.ID, string(tsData))
+	}
+
+	// File should still exist on disk.
+	if _, err := os.Stat(filePath); err != nil {
+		t.Error("file should still exist after atomic save sequence")
+	}
+}
