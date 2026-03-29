@@ -95,7 +95,11 @@ func applyEvent(state *State, ev *Note) {
 	}
 
 	if ev.Field != "" {
-		applyFieldChange(state, ev.Field, ev.Value)
+		value := ev.Value
+		if ev.Field == "body" && ev.Body != "" {
+			value = ev.Body
+		}
+		applyFieldChange(state, ev.Field, value)
 	}
 }
 

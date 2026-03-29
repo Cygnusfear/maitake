@@ -87,7 +87,7 @@ type State struct {
 	Status    string    `json:"status"`
 	Title     string    `json:"title,omitempty"`
 	Type      string    `json:"type,omitempty"`
-	Priority  int       `json:"priority,omitempty"`
+	Priority  int       `json:"priority"`
 	Assignee  string    `json:"assignee,omitempty"`
 	Tags      []string  `json:"tags,omitempty"`
 	Body      string    `json:"body,omitempty"`
@@ -110,7 +110,7 @@ type StateSummary struct {
 	Kind      string    `json:"kind"`
 	Status    string    `json:"status"`
 	Type      string    `json:"type,omitempty"`
-	Priority  int       `json:"priority,omitempty"`
+	Priority  int       `json:"priority"`
 	Title     string    `json:"title,omitempty"`
 	Tags      []string  `json:"tags,omitempty"`
 	Targets   []string  `json:"targets,omitempty"`

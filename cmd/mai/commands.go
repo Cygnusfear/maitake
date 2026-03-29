@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/cygnusfear/maitake/pkg/guard"
@@ -414,6 +415,105 @@ func runAssign(e notes.Engine, args []string) {
 		fatal("assign: %v", err)
 	}
 	fmt.Printf("%s assigned to %s\n", args[0], args[1])
+}
+
+func runPriority(e notes.Engine, args []string) {
+	if len(args) < 2 {
+		fatal("usage: mai priority <id> <0-4>")
+	}
+	var p int
+	if _, err := fmt.Sscanf(args[1], "%d", &p); err != nil || p < 0 || p > 4 {
+		fatal("priority must be 0-4 (0=critical, 1=high, 2=normal, 3=low, 4=someday)")
+	}
+	_, err := e.Append(notes.AppendOptions{
+		TargetID: args[0],
+		Kind:     "event",
+		Field:    "priority",
+		Value:    args[1],
+	})
+	if err != nil {
+		fatal("priority: %v", err)
+	}
+	fmt.Printf("%s → priority %s\n", args[0], args[1])
+}
+
+func runEdit(e notes.Engine, args []string) {
+	if len(args) < 1 {
+		fatal("usage: mai edit <id> [-d body]")
+	}
+	id := args[0]
+	f, _ := parseFlags(args[1:])
+
+	if f.help {
+		fmt.Fprintln(os.Stderr, `Usage: mai edit <id> [-d body]
+
+Updates the body of a note via an edit event.
+If -d is omitted, opens $EDITOR with the current body.`)
+		return
+	}
+
+	body := f.body
+	if body == "" {
+		// Open $EDITOR with current body
+		state, err := e.Fold(id)
+		if err != nil {
+			fatal("edit: %v", err)
+		}
+		edited, err := editInEditor(state.Body)
+		if err != nil {
+			fatal("edit: %v", err)
+		}
+		if edited == state.Body {
+			fmt.Println("(no changes)")
+			return
+		}
+		body = edited
+	}
+
+	_, err := e.Append(notes.AppendOptions{
+		TargetID: id,
+		Kind:     "event",
+		Field:    "body",
+		Body:     body,
+	})
+	if err != nil {
+		fatal("edit: %v", err)
+	}
+	fmt.Printf("%s body updated\n", id)
+}
+
+// editInEditor opens $EDITOR with content and returns the edited result.
+func editInEditor(content string) (string, error) {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+
+	tmpFile, err := os.CreateTemp("", "mai-edit-*.md")
+	if err != nil {
+		return "", fmt.Errorf("creating temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		tmpFile.Close()
+		return "", fmt.Errorf("writing temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	cmd := exec.Command(editor, tmpFile.Name())
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("editor exited with error: %w", err)
+	}
+
+	edited, err := os.ReadFile(tmpFile.Name())
+	if err != nil {
+		return "", fmt.Errorf("reading edited file: %w", err)
+	}
+	return string(edited), nil
 }
 
 func runDep(e notes.Engine, args []string) {
