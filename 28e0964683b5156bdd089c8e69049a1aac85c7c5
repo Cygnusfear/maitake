@@ -3,3 +3,5 @@
 {"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-ixdi"}}],"timestamp":"2026-03-29T14:14:29Z","branch":"main"}
 
 {"id":"ae-j9zu","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ixdi"}}],"body":"Started: reading pkg/notes engine/types and existing test helpers, then I’ll build adversarial coverage in test/engine_adversarial_test.go.","timestamp":"2026-03-29T14:15:00Z","branch":"teams/adversarial-engine/mai-ixdi"}
+
+{"id":"ae-lvom","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-ixdi"}}],"body":"Progress: wrote the first adversarial engine suite draft in test/engine_adversarial_test.go, including crash-isolated helpers for the current concurrency bugs. Running focused tests now.","timestamp":"2026-03-29T14:23:46Z","branch":"teams/adversarial-engine/mai-ixdi"}
