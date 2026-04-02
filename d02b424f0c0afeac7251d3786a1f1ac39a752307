@@ -13,3 +13,5 @@
 {"id":"mai-vqy8","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"location":{"path":"test/docs_adversarial_test.go"},"body":"Added regression tests for duplicate target rejection, frontmatter-less file adoption, and duplicate-target conflict reporting during docs sync.","timestamp":"2026-04-02T16:21:41Z","branch":"main"}
 
 {"id":"mai-c9uz","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"body":"Verification is blocked in this shell because the Go toolchain is missing ( returns 'go: command not found'). The source changes are in place, but they still need a real test run once Go is available.","timestamp":"2026-04-02T16:22:07Z","branch":"main"}
+
+{"id":"mai-oto1","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"body":"User asked to use nix shell for Go. Running the docs regression suite under nix-shell with Go installed so the duplicate-target fix gets real verification.","timestamp":"2026-04-02T16:25:14Z","branch":"main"}
