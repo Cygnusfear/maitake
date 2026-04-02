@@ -17,3 +17,5 @@
 {"id":"mai-oto1","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"body":"User asked to use nix shell for Go. Running the docs regression suite under nix-shell with Go installed so the duplicate-target fix gets real verification.","timestamp":"2026-04-02T16:25:14Z","branch":"main"}
 
 {"id":"mai-dyvd","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"body":"Verified in nix shell.  passes, and full  passes too. The fix now (1) rejects duplicate doc targets at create time, (2) reports duplicate-target conflicts during sync instead of last-write-wins overwrites, (3) reattaches frontmatter-less files to the existing doc note instead of importing a duplicate, and (4) prevents ambiguous daemon tombstones.","timestamp":"2026-04-02T16:36:35Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-diso"}}],"body":"Fixed docs sync collisions for duplicate doc targets and verified with full Go test suite via nix shell.","timestamp":"2026-04-02T16:36:35Z","branch":"main"}
