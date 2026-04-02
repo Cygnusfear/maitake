@@ -5,3 +5,5 @@
 {"id":"mai-ca69","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-yi0r"}}],"body":"Committing the verified maitake docs sync fix now. I will exclude README.draft.md and keep the commit focused on daemon/docs/engine/test changes only.","timestamp":"2026-04-02T17:48:58Z","branch":"main"}
 
 {"id":"mai-d0oy","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-yi0r"}}],"body":"Committed as 0a21d22 (fix: stabilize mai doc sync ownership). This includes duplicate-target rejection, sync conflict handling, frontmatter-less file adoption, daemon ambiguity protection, and regression coverage.","timestamp":"2026-04-02T17:49:40Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-yi0r"}}],"body":"Committed the verified docs sync ownership fix as 0a21d22.","timestamp":"2026-04-02T17:49:40Z","branch":"main"}
