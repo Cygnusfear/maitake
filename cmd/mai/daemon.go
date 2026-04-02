@@ -185,22 +185,41 @@ func handleFileDelete(w watchedRepo, filePath string) {
 
 	// Find doc note that targets this file
 	states, _ := engine.Find(notes.FindOptions{Kind: "doc"})
+	var matches []notes.State
+	var openMatches []notes.State
 	for _, state := range states {
+		matched := false
 		for _, target := range state.Targets {
 			if target == rel {
-				notes.AddTombstone(w.path, state.ID)
-				fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, state.ID, filepath.Base(w.path))
-				return
+				matched = true
+				break
 			}
 		}
 		// Also check derived path
 		targetPath := notes.DocTargetPathExported(&state, w.cfg.Docs.Dir)
 		if targetPath == rel {
-			notes.AddTombstone(w.path, state.ID)
-			fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, state.ID, filepath.Base(w.path))
-			return
+			matched = true
+		}
+		if matched {
+			matches = append(matches, state)
+			if state.Status != "closed" {
+				openMatches = append(openMatches, state)
+			}
 		}
 	}
+	if len(openMatches) == 1 {
+		notes.AddTombstone(w.path, openMatches[0].ID)
+		fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, openMatches[0].ID, filepath.Base(w.path))
+		return
+	}
+	if len(matches) != 1 {
+		if len(matches) > 1 {
+			fmt.Printf("  ! %s (ambiguous doc targets, not tombstoning) [%s]\n", rel, filepath.Base(w.path))
+		}
+		return
+	}
+	notes.AddTombstone(w.path, matches[0].ID)
+	fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, matches[0].ID, filepath.Base(w.path))
 }
 
 

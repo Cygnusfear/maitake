@@ -76,6 +76,16 @@ func (e *RealEngine) slotRef(slot string) git.NotesRef {
 	return e.activeRef()
 }
 
+func (e *RealEngine) docOwnerForPath(path string) string {
+	for _, id := range e.index.ByTarget[path] {
+		state := e.index.States[id]
+		if state != nil && state.Kind == "doc" {
+			return id
+		}
+	}
+	return ""
+}
+
 // Create writes a new creation note with a generated ID.
 func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	if opts.Kind == "" {
@@ -136,6 +146,18 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 			Type:   "targets",
 			Target: EdgeTarget{Kind: "path", Ref: autoPath},
 		})
+	}
+
+	if opts.Kind == "doc" {
+		for _, edge := range note.Edges {
+			if edge.Type != "targets" || edge.Target.Kind != "path" {
+				continue
+			}
+			existingID := e.docOwnerForPath(edge.Target.Ref)
+			if existingID != "" && existingID != id {
+				return nil, fmt.Errorf("doc target %q already owned by %s", edge.Target.Ref, existingID)
+			}
+		}
 	}
 
 	// Set default status based on type
@@ -942,4 +964,3 @@ func (e *RealEngine) getOrCreateTarget(note *Note) (git.OID, error) {
 
 // NoteRefs delegates to the git repo to list maitake notes refs.
 // This extends the git.Repo interface for maitake-specific ref filtering.
-

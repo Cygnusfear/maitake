@@ -48,6 +48,24 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 	for i := range states {
 		docNotes[states[i].ID] = &states[i]
 	}
+	byPath := make(map[string]*State)      // target path → canonical open doc state
+	pathConflicts := make(map[string]bool) // target path has >1 open doc note
+	for i := range states {
+		state := &states[i]
+		if state.Status == "closed" {
+			continue
+		}
+		path := docTargetPath(state, cfg.Dir)
+		if existing, ok := byPath[path]; ok {
+			pathConflicts[path] = true
+			_ = existing
+			continue
+		}
+		if pathConflicts[path] {
+			continue
+		}
+		byPath[path] = state
+	}
 	// Also include closed docs (might need to remove files)
 	closedDocs, _ := engine.Find(FindOptions{Kind: "doc", Status: "closed"})
 	closedIDs := make(map[string]bool)
@@ -87,6 +105,17 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 
 	// Load tombstones
 	tombstones := loadTombstones(filepath.Join(repoPath, ".maitake"))
+	newFilesByPath := make(map[string]*DocFile)
+	for _, df := range newFiles {
+		newFilesByPath[df.Path] = df
+	}
+	conflictSeen := make(map[string]bool)
+	addConflict := func(path string) {
+		if !conflictSeen[path] {
+			result.Conflicts = append(result.Conflicts, path)
+			conflictSeen[path] = true
+		}
+	}
 
 	// 3. Notes → disk: write or update files
 	for id, state := range docNotes {
@@ -98,6 +127,10 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 		}
 
 		targetPath := docTargetPath(state, cfg.Dir)
+		if pathConflicts[targetPath] {
+			addConflict(targetPath)
+			continue
+		}
 		noteHash := contentHash(state.Body)
 
 		if df, exists := diskFiles[id]; exists {
@@ -133,6 +166,9 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 			}
 			result.Updated = append(result.Updated, df.Path)
 		} else {
+			if _, pendingImport := newFilesByPath[targetPath]; pendingImport {
+				continue // let disk → notes decide whether to adopt or import
+			}
 			// Note exists, no file — write it
 			if !dryRun {
 				absPath := filepath.Join(repoPath, targetPath)
@@ -147,6 +183,54 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 	// 4. Disk → notes: import files without mai-id as doc notes.
 	// Preserves the original file path as the target edge.
 	for _, df := range newFiles {
+		if pathConflicts[df.Path] {
+			addConflict(df.Path)
+			continue
+		}
+
+		if state, exists := byPath[df.Path]; exists {
+			if dryRun {
+				result.Updated = append(result.Updated, df.Path)
+				continue
+			}
+
+			mergedBody := state.Body
+			if df.Hash != contentHash(state.Body) {
+				creationBody := ""
+				if creation, err := engine.Get(state.ID); err == nil && creation != nil {
+					creationBody = creation.Body
+				}
+				merged := mergeViaCRDT(state, df.Content, creationBody)
+				mergedBody = merged.Body
+				if mergedBody != state.Body {
+					engine.Append(AppendOptions{
+						TargetID: state.ID,
+						Kind:     "event",
+						Field:    "body",
+						Body:     mergedBody,
+					})
+				}
+				if merged.YDocState != nil {
+					engine.Append(AppendOptions{
+						TargetID: state.ID,
+						Kind:     "event",
+						Field:    "ydoc",
+						Value:    base64.StdEncoding.EncodeToString(merged.YDocState),
+					})
+				}
+			}
+
+			absPath := filepath.Join(repoPath, df.Path)
+			if err := writeDocFile(absPath, state.ID, mergedBody); err == nil {
+				if closedIDs[state.ID] {
+					_ = markDocFileClosed(absPath, state.ID)
+				}
+				RemoveTombstone(repoPath, state.ID)
+			}
+			result.Updated = append(result.Updated, df.Path)
+			continue
+		}
+
 		if dryRun {
 			result.Imported = append(result.Imported, df.Path)
 			continue
@@ -170,8 +254,18 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 	// We do NOT delete the file; Obsidian/editors would throw a delete modal.
 	for id := range closedIDs {
 		if df, exists := diskFiles[id]; exists {
+			if pathConflicts[df.Path] {
+				addConflict(df.Path)
+				continue
+			}
 			if !dryRun {
 				absPath := filepath.Join(repoPath, df.Path)
+				if data, err := os.ReadFile(absPath); err == nil {
+					currentID, _ := parseMaiFrontmatter(string(data))
+					if currentID != id {
+						continue
+					}
+				}
 				markDocFileClosed(absPath, id)
 			}
 			result.Removed = append(result.Removed, df.Path)

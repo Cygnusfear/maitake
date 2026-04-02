@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/notes"
@@ -497,6 +498,147 @@ func TestDocs_AddMaiIdToExistingFrontmatter(t *testing.T) {
 	}
 	if !strings.Contains(content, "created: 2025-01-01") {
 		t.Errorf("created field dropped when mai-id was added.\nGot:\n%s", content)
+	}
+}
+
+func TestDocs_CreateRejectsDuplicateTargetPath(t *testing.T) {
+	dir, engine := docEngine(t)
+	_ = dir
+
+	_, err := engine.Create(notes.CreateOptions{
+		Kind:    "doc",
+		Title:   "One",
+		Body:    "first",
+		Targets: []string{"docs/shared.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = engine.Create(notes.CreateOptions{
+		Kind:    "doc",
+		Title:   "Two",
+		Body:    "second",
+		Targets: []string{"docs/shared.md"},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate doc target to be rejected")
+	}
+	if !strings.Contains(err.Error(), "already owned") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDocsSync_StrippedFrontmatterAdoptsExistingDoc(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	note, err := engine.Create(notes.CreateOptions{
+		Kind:    "doc",
+		Title:   "Guide",
+		Body:    "# Guide\n\nOriginal body.\n",
+		Targets: []string{"docs/guide.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := notes.SyncDocs(engine, dir, docsCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a user or tool replacing the file without mai frontmatter.
+	stripped := "# Guide\n\nEdited on disk without frontmatter.\n"
+	if err := os.WriteFile(filepath.Join(dir, "docs", "guide.md"), []byte(stripped), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Imported) != 0 {
+		t.Fatalf("should not import a duplicate doc, imported=%v", result.Imported)
+	}
+	if len(result.Updated) != 1 || result.Updated[0] != "docs/guide.md" {
+		t.Fatalf("expected guide.md to update existing note, got %+v", result)
+	}
+
+	summaries, _ := engine.List(notes.ListOptions{FindOptions: notes.FindOptions{Kind: "doc"}})
+	if len(summaries) != 1 {
+		t.Fatalf("expected one doc note, got %d", len(summaries))
+	}
+	state, err := engine.Fold(note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(state.Body, "Edited on disk without frontmatter") {
+		t.Fatalf("expected existing note body to adopt disk edit, got %q", state.Body)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "docs", "guide.md"))
+	content := string(data)
+	if !strings.Contains(content, "mai-id: "+note.ID) {
+		t.Fatalf("expected file to be reattached to original note id, got:\n%s", content)
+	}
+}
+
+func TestDocsSync_DuplicateTargetsReportConflict(t *testing.T) {
+	dir := setupRepo(t)
+	repo, _ := git.NewGitRepo(dir)
+	engine, _ := notes.NewEngine(repo)
+
+	first, err := engine.Create(notes.CreateOptions{
+		Kind:    "doc",
+		Title:   "One",
+		Body:    "first",
+		Targets: []string{"docs/conflict.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second := &notes.Note{
+		ID:        "doc-conflict-2",
+		Kind:      "doc",
+		Title:     "Two",
+		Body:      "second",
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Time:      time.Now().UTC(),
+		Edges: []notes.Edge{{
+			Type:   "targets",
+			Target: notes.EdgeTarget{Kind: "path", Ref: "docs/conflict.md"},
+		}},
+	}
+	data, err := notes.Serialize(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetOID, err := repo.StoreBlob("maitake:" + second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AppendNote(git.DefaultNotesRef, targetOID, git.Note(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conflicts) != 1 || result.Conflicts[0] != "docs/conflict.md" {
+		t.Fatalf("expected one conflict on docs/conflict.md, got %+v", result)
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "docs", "conflict.md"))
+	if err != nil {
+		t.Fatalf("existing conflicted file should be left in place: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "mai-id: "+first.ID) {
+		t.Fatalf("conflicted file should stay attached to the original note.\nGot:\n%s", content)
+	}
+	if strings.Contains(content, second.ID) || strings.Contains(content, "second") {
+		t.Fatalf("conflicted file should not be overwritten by the duplicate note.\nGot:\n%s", content)
 	}
 }
 
