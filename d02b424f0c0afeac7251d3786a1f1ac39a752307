@@ -11,3 +11,5 @@
 {"id":"mai-m6ol","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"location":{"path":"cmd/mai/daemon.go"},"body":"Avoid tombstoning an arbitrary note when multiple doc notes match one file path. Daemon now refuses ambiguous deletes instead of choosing the first match.","timestamp":"2026-04-02T16:21:41Z","branch":"main"}
 
 {"id":"mai-vqy8","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"location":{"path":"test/docs_adversarial_test.go"},"body":"Added regression tests for duplicate target rejection, frontmatter-less file adoption, and duplicate-target conflict reporting during docs sync.","timestamp":"2026-04-02T16:21:41Z","branch":"main"}
+
+{"id":"mai-c9uz","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-diso"}}],"body":"Verification is blocked in this shell because the Go toolchain is missing ( returns 'go: command not found'). The source changes are in place, but they still need a real test run once Go is available.","timestamp":"2026-04-02T16:22:07Z","branch":"main"}
