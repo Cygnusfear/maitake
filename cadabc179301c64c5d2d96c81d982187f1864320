@@ -5,3 +5,5 @@
 {"id":"mai-nbej","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-clv0"}}],"body":"AUTO-RESPAWN: process died in 0.0s before creating a session file. Respawning once.","timestamp":"2026-04-03T12:03:06Z","branch":"main"}
 
 {"id":"mai-31mu","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-clv0"}}],"body":"Started research: loading source files, history, prior research tickets, and Obsidian save behavior.","timestamp":"2026-04-03T12:03:50Z","branch":"main"}
+
+{"id":"mai-h2d6","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-clv0"}}],"body":"Starting research: reading CRDT/docs/daemon/tests, prior research tickets, git history, and Obsidian save behavior before forming a hypothesis.","timestamp":"2026-04-03T12:04:20Z","branch":"main"}
