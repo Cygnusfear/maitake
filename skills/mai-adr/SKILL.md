@@ -11,15 +11,17 @@ ADRs in maitake are `kind: decision` notes. They're stored in the notes ref, att
 
 ```bash
 # Simple decision — attached to a file
-mai create "Use mutex for token refresh" -k decision --target src/auth.ts \
+mai adr "Use mutex for token refresh" --target src/auth.ts \
   -d "Chose mutex over single-flight. Single-flight propagates the first
 caller's error to all waiters, wrong for transient failures."
 
-# Project-wide decision
-mai create "JSON notes, not YAML" -k decision \
+# Project-wide decision (no --target)
+mai adr "JSON notes, not YAML" \
   -d "JSON for note storage. Standard parsing, cat_sort_uniq merge works
 because each note is one self-contained line."
 ```
+
+`mai adr` is a shortcut for `mai create -k decision`. Both work.
 
 ## Tiers — match documentation depth to decision weight
 
@@ -34,7 +36,7 @@ because each note is one self-contained line."
 ### Brief (most common)
 
 ```bash
-mai create "Use Zustand for client state" -k decision --target src/store/ \
+mai adr "Use Zustand for client state" --target src/store/ \
   -d "Minimal API, TypeScript-first, no providers. Rejected Redux (too heavy),
 Jotai (atom model less intuitive), Context (prop drilling at scale)."
 ```

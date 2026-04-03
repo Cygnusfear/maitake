@@ -12,10 +12,11 @@ The contract: **read before you work, leave notes after.**
 First time in a repo:
 
 ```bash
-mai init --remote forgejo --block github.com
+mai init                            # local only — nothing pushes anywhere
+mai init --remote forgejo           # enable auto-push to a specific remote
 ```
 
-This creates `.maitake/hooks/` (PII scanning), config (sync remote), and adds `.maitake/` to `.gitignore`. Notes auto-push to the configured remote after every write.
+This creates `.maitake/hooks/` (PII scanning), `.maitake/config.toml` (sync config), and adds `.maitake/` to `.gitignore`. Without `--remote`, everything stays local. With `--remote`, notes auto-push after every write. `github.com` is blocked by default either way.
 
 ## On arrival
 
@@ -50,6 +51,24 @@ mai add-note <ticket-id> --file src/auth.ts --line 42 "line-level detail"
 mai ticket "Fix auth race condition" -p 1 -l auth --target src/auth.ts \
   -d "Token refresh has a race condition."
 ```
+
+### Attaching things directly to files
+
+Warnings, decisions, and artifacts can target files without a pre-existing ticket:
+
+```bash
+# Warning on a fragile file
+mai warn src/auth.ts "Token cache not thread-safe"
+
+# Decision (ADR) explaining why code is the way it is
+mai adr "Use mutex for token refresh" --target src/auth.ts \
+  -d "Chose mutex over single-flight. SF propagates errors to all waiters."
+
+# Artifact — research, analysis, post-mortem (born closed)
+mai artifact "Perf analysis" --target src/physics/rebuild.rs -d "..."
+```
+
+`mai context <file>` shows all of these. This is how you stick the *why* onto the *what*.
 
 ### Tagging and assigning
 
@@ -114,7 +133,10 @@ mai ls --status=all -k review # all reviews
 
 ## Sync
 
-Notes auto-push after every write if a remote is configured. Manual sync:
+If a remote is configured, notes auto-push after every write (debounced,
+conflict-safe). Without a remote, nothing syncs — everything stays local.
+
+Manual sync:
 
 ```bash
 mai sync                      # fetch + merge + push

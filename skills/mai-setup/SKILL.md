@@ -8,13 +8,15 @@ description: Use when setting up maitake in a repo for the first time, configuri
 ## First-time setup
 
 ```bash
-mai init --remote forgejo --block github.com
+mai init                            # local only — no remote, no push
+mai init --remote forgejo           # enable auto-push to a remote
+mai init --remote forgejo --block github.com  # push to forgejo, block github
 ```
 
-This does three things:
-1. Creates `.maitake/hooks/pre-write` — scans for secrets before every note write
-2. Creates `.maitake/config` — configures auto-push remote and blocked hosts
-3. Adds `.maitake/` to `.gitignore` — keeps config local to each machine
+This creates:
+1. `.maitake/hooks/pre-write` — scans for secrets before every note write
+2. `.maitake/config.toml` — sync remote + blocked hosts
+3. `.gitignore` entry — keeps `.maitake/` out of the repo
 
 ### What each flag does
 
@@ -25,20 +27,29 @@ This does three things:
 
 ### Default behavior
 
-- **No remote** → notes are local only, no auto-push
-- **Default blocked** → `github.com` (if no `--block` specified)
+- **No `--remote`** → notes are local only, nothing pushes anywhere
+- **Default blocked** → `github.com` (even when a remote is configured)
+- **No flags at all** → fully local, private, zero network activity
 
 ## Config file
 
-`.maitake/config`:
+`.maitake/config.toml`:
 
-```
-remote forgejo
-blocked-host github.com
-blocked-host gitlab.com
+```toml
+[sync]
+remote = "forgejo"
+blocked-hosts = ["github.com", "gitlab.com"]
+
+[docs]
+sync = "auto"      # "auto" | "manual" | "off"
+dir = ".mai-docs"
+
+[hooks]
+pre-write = true
+post-push = true
 ```
 
-Edit directly or re-run `mai init`.
+Edit directly or re-run `mai init`. Legacy flat-format config files are still read for backwards compatibility.
 
 ## How sync works
 
@@ -61,7 +72,10 @@ Fetch + merge + push in one command. Use after cloning a repo that already has n
 
 ### Privacy
 
-Notes refs don't push by default — git ignores them. Only the configured remote gets notes. Blocked hosts are checked before every push.
+Git notes don't push with `git push` — git ignores `refs/notes/*` by default.
+maitake only pushes to the remote you configure in `.maitake/config.toml`.
+Blocked hosts are checked before every push. No remote configured = nothing
+leaves your machine.
 
 ## After cloning a repo with existing notes
 
