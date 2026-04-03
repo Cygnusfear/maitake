@@ -3,3 +3,5 @@
 {"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-n8ss"}}],"timestamp":"2026-04-03T12:03:53Z","branch":"main"}
 
 {"id":"mai-xyrs","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-n8ss"}}],"body":"Starting Oracle #4 investigation. Phase 1: Reading all source files and gathering context.","timestamp":"2026-04-03T12:04:18Z","branch":"main"}
+
+{"id":"mai-8c8k","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-n8ss"}}],"body":"Phase 1 complete. Read all source files. Key findings so far: the core bug is in mergeViaCRDT's base selection. When creationBody is used as the 3-way base, both the note-peer and file-peer independently 'insert' all the content that was added since creation. y-crdt sees these as concurrent inserts of identical text and keeps BOTH copies. Moving to Phase 2: deep investigation of the exact duplication mechanism.","timestamp":"2026-04-03T12:07:32Z","branch":"main"}
