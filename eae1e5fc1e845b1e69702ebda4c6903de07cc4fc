@@ -7,3 +7,5 @@
 {"id":"mai-mhn5","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-vp0x"}}],"body":"Reproduced the bug outside the repo: repeated full-file saves with creation-body as merge base double old fragments each sync (2x, 4x, 8x, 16x, 32x). Now checking current tests and remaining evidence gaps.","timestamp":"2026-04-03T12:15:04Z","branch":"main"}
 
 {"id":"mai-4ibg","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-vp0x"}}],"body":"FAILED: Worker exited without completing work (provider error)","timestamp":"2026-04-03T12:21:11Z","branch":"main"}
+
+{"id":"mai-e2gt","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-vp0x"}}],"body":"Findings are written up. Creating the required research ticket now, then I will close this worker ticket with the summary and ticket ID.","timestamp":"2026-04-03T12:23:45Z","branch":"main"}
