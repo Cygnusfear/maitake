@@ -5,3 +5,5 @@
 {"id":"mai-p3zs","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-oftk"}}],"body":"AUTO-RESPAWN: process died in 0.1s before creating a session file. Respawning once.","timestamp":"2026-04-03T12:24:53Z","branch":"main"}
 
 {"id":"mai-qezq","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-oftk"}}],"body":"Starting synthesis. Read all 7 oracle tickets. Analyzing convergent findings, divergent findings, and unique discoveries before writing final synthesis.","timestamp":"2026-04-03T12:26:04Z","branch":"main"}
+
+{"id":"mai-sjgr","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-oftk"}}],"body":"Read all 7 oracle tickets. Oracles agree on root cause: mergeViaCRDT uses creationBody as merge base forever, causing exponential duplication. Main divergence: keep CRDT vs drop it. Synthesizing now.","timestamp":"2026-04-03T12:26:22Z","branch":"main"}
