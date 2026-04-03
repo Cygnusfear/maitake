@@ -9,3 +9,5 @@
 {"id":"mai-y8t3","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-n8ss"}}],"body":"Phase 2 complete. Full understanding of the duplication mechanism confirmed. Phase 3: Design analysis starting now. Compiling full findings.","timestamp":"2026-04-03T12:07:53Z","branch":"main"}
 
 {"id":"mai-i27s","kind":"comment","edges":[{"type":"on","target":{"kind":"note","ref":"mai-n8ss"}}],"body":"DONE: Full Oracle 4 investigation complete. Created research ticket mai-q7me with findings. Root cause: mergeViaCRDT uses creationBody (ancient base) for 3-way merge, causing y-crdt to see both peers independently inserting identical large text blocks — producing 40x duplication. The fix: implement shadow copy tracking (last-synced content), use it as the proper 3-way merge base, and only invoke CRDT merge when both note and file changed since last sync. Includes concrete testing strategy with 18 test cases.","timestamp":"2026-04-03T12:10:19Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-n8ss"}}],"timestamp":"2026-04-03T12:10:20Z","branch":"main"}
