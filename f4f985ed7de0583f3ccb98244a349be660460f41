@@ -7,3 +7,5 @@
 {"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-g20h"}}],"timestamp":"2026-04-03T12:03:07Z","branch":"main"}
 
 {"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-g20h"}}],"timestamp":"2026-04-03T12:03:34Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"open","edges":[{"type":"reopens","target":{"kind":"note","ref":"mai-g20h"}}],"timestamp":"2026-04-03T12:03:39Z","branch":"main"}
