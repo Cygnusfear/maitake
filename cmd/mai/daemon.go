@@ -13,6 +13,13 @@ import (
 )
 
 func runDaemon(args []string) {
+	// Acquire exclusive lock — only one daemon per user.
+	lockFile, err := acquireDaemonLock()
+	if err != nil {
+		os.Exit(0) // another daemon already running
+	}
+	defer lockFile.Close()
+
 	repos := loadRepoList()
 	if len(repos) == 0 {
 		os.Exit(0) // no repos, exit silently

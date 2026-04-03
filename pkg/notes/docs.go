@@ -140,29 +140,70 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 			}
 			// Hashes differ — merge via CRDT if state available, else file wins
 			if !dryRun {
-				// Get the creation body as the base for 3-way merge
-				creationBody := ""
-				if creation, err := engine.Get(id); err == nil && creation != nil {
-					creationBody = creation.Body
-				}
-				merged := mergeViaCRDT(state, df.Content, creationBody)
-				engine.Append(AppendOptions{
-					TargetID: id,
-					Kind:     "event",
-					Field:    "body",
-					Body:     merged.Body,
-				})
-				if merged.YDocState != nil {
+				// Determine what changed: file, note, or both?
+				syncBase := lastSyncBody(state)
+				fileChanged := syncBase == "" || contentHash(df.Content) != contentHash(syncBase)
+				noteChanged := syncBase == "" || contentHash(state.Body) != contentHash(syncBase)
+
+				if fileChanged && !noteChanged {
+					// Only file changed (user editing in Obsidian) —
+					// update the note to match, do NOT touch the file.
 					engine.Append(AppendOptions{
 						TargetID: id,
 						Kind:     "event",
-						Field:    "ydoc",
-						Value:    base64.StdEncoding.EncodeToString(merged.YDocState),
+						Field:    "body",
+						Body:     df.Content,
+					})
+					engine.Append(AppendOptions{
+						TargetID: id,
+						Kind:     "event",
+						Field:    "lastsync",
+						Body:     df.Content,
+					})
+				} else if noteChanged && !fileChanged {
+					// Only note changed (agent edit via mai) —
+					// update the file, leave the note alone.
+					absPath := filepath.Join(repoPath, df.Path)
+					writeDocFile(absPath, id, state.Body)
+					engine.Append(AppendOptions{
+						TargetID: id,
+						Kind:     "event",
+						Field:    "lastsync",
+						Body:     state.Body,
+					})
+				} else {
+					// Both changed, or first sync — full CRDT merge.
+					creationBody := ""
+					if creation, err := engine.Get(id); err == nil && creation != nil {
+						creationBody = creation.Body
+					}
+					merged := mergeViaCRDT(state, df.Content, creationBody)
+					engine.Append(AppendOptions{
+						TargetID: id,
+						Kind:     "event",
+						Field:    "body",
+						Body:     merged.Body,
+					})
+					if merged.YDocState != nil {
+						engine.Append(AppendOptions{
+							TargetID: id,
+							Kind:     "event",
+							Field:    "ydoc",
+							Value:    base64.StdEncoding.EncodeToString(merged.YDocState),
+						})
+					}
+					// Only write file if the merge result differs from what's on disk
+					if merged.Body != df.Content {
+						absPath := filepath.Join(repoPath, df.Path)
+						writeDocFile(absPath, id, merged.Body)
+					}
+					engine.Append(AppendOptions{
+						TargetID: id,
+						Kind:     "event",
+						Field:    "lastsync",
+						Body:     merged.Body,
 					})
 				}
-				// Write merged content back to file
-				absPath := filepath.Join(repoPath, df.Path)
-				writeDocFile(absPath, id, merged.Body)
 			}
 			result.Updated = append(result.Updated, df.Path)
 		} else {
@@ -175,6 +216,13 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 				if err := writeDocFile(absPath, id, state.Body); err != nil {
 					continue
 				}
+				// Record sync base so future merges use this as the ancestor
+				engine.Append(AppendOptions{
+					TargetID: id,
+					Kind:     "event",
+					Field:    "lastsync",
+					Body:     state.Body,
+				})
 			}
 			result.Written = append(result.Written, targetPath)
 		}
@@ -226,6 +274,13 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 					_ = markDocFileClosed(absPath, state.ID)
 				}
 				RemoveTombstone(repoPath, state.ID)
+				// Record sync base for next merge
+				engine.Append(AppendOptions{
+					TargetID: state.ID,
+					Kind:     "event",
+					Field:    "lastsync",
+					Body:     mergedBody,
+				})
 			}
 			result.Updated = append(result.Updated, df.Path)
 			continue
@@ -247,6 +302,13 @@ func SyncDocs(engine Engine, repoPath string, cfg DocsConfig, opts ...DocSyncOpt
 		}
 		absPath := filepath.Join(repoPath, df.Path)
 		writeDocFile(absPath, note.ID, df.Content)
+		// Record sync base for next merge
+		engine.Append(AppendOptions{
+			TargetID: note.ID,
+			Kind:     "event",
+			Field:    "lastsync",
+			Body:     df.Content,
+		})
 		result.Imported = append(result.Imported, df.Path)
 	}
 
@@ -378,12 +440,20 @@ func writeDocFile(absPath, noteID, body string) error {
 			}
 			fm := strings.Join(newLines, "\n")
 			content := fmt.Sprintf("---\n%s\n---\n%s\n", fm, body)
+			// Skip write if file content is already identical — avoids
+			// triggering Obsidian's "file changed externally" dialog.
+			if string(existing) == content {
+				return nil
+			}
 			return os.WriteFile(absPath, []byte(content), 0644)
 		}
 	}
 
 	// File doesn't exist or has no frontmatter — write minimal frontmatter.
 	content := fmt.Sprintf("---\nmai-id: %s\n---\n%s\n", noteID, body)
+	if string(existing) == content {
+		return nil
+	}
 	return os.WriteFile(absPath, []byte(content), 0644)
 }
 
@@ -508,15 +578,11 @@ type mergeResult struct {
 }
 
 // lastSyncBody returns the body content as it was when last synced to disk.
-// This is the "base" for 3-way merge. We look for the body value at the time
-// the file was last written (= the body in the most recent autoSync or docs sync).
-// Falls back to creation body if no sync happened.
+// This is the "base" for 3-way merge — the content both note and file agreed
+// on at the end of the last successful sync. Falls back to empty string if
+// no sync has happened yet (caller uses creationBody).
 func lastSyncBody(state *State) string {
-	// The file was last written with the note's body at that time.
-	// Since we don't track sync timestamps yet, use the CREATION body
-	// as the base — it's what the file was first created from.
-	// TODO: track last-sync body hash for better 3-way merge base
-	return ""
+	return state.LastSyncBody
 }
 
 // mergeViaCRDT merges a note's body with a file's content using CRDT.
@@ -546,11 +612,26 @@ func mergeViaCRDT(state *State, fileContent string, creationBody string) mergeRe
 			}
 
 			// True 3-way CRDT merge:
-			// 1. Create a base YDoc from the original content
+			// 1. Create a base YDoc from the last-synced content
 			// 2. Create note-side peer from base, apply note edits
 			// 3. Create file-side peer from base, apply file edits
 			// 4. Merge via full-state Apply
-			base := creationBody
+			//
+			// The base MUST be what both sides agreed on at the last sync.
+			// Using creationBody here caused exponential duplication because
+			// both peers would diff from an ancient base, producing massive
+			// overlapping inserts that the CRDT faithfully preserves.
+			base := lastSyncBody(state)
+			if base == "" && state.YDocState != nil {
+				// Migration: syncs happened before lastsync tracking was added.
+				// The note's current body is the best approximation of what was
+				// last written to disk — use it so only the file-side diff applies.
+				base = noteContent
+			}
+			if base == "" {
+				// Truly first sync — creation body is correct
+				base = creationBody
+			}
 			if base == "" {
 				base = noteContent
 			}

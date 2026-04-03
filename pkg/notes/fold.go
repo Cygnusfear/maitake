@@ -140,7 +140,7 @@ func applyEvent(state *State, ev *Note) {
 
 	if ev.Field != "" {
 		value := ev.Value
-		if ev.Field == "body" && ev.Body != "" {
+		if (ev.Field == "body" || ev.Field == "lastsync") && ev.Body != "" {
 			value = ev.Body
 		}
 		applyFieldChange(state, ev.Field, value)
@@ -167,6 +167,8 @@ func applyFieldChange(state *State, field, value string) {
 		if decoded, err := base64.StdEncoding.DecodeString(value); err == nil {
 			state.YDocState = decoded
 		}
+	case "lastsync":
+		state.LastSyncBody = value
 	case "tags":
 		applyTagChange(state, value)
 	case "deps":

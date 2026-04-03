@@ -4,28 +4,59 @@
 
 <h1 align="center">maitake</h1>
 
-Git-native tickets, notes, and code review. One binary, zero dependencies beyond git. Storage lives in `refs/notes/maitake` — invisible to your working tree, pushed only where you choose.
+<p align="center">
+  One primitive for your entire decision trail.<br>
+  Tickets, reviews, PRs, docs — all stored as git notes. Nothing leaves your machine unless you say so.
+</p>
 
 ```bash
 go install github.com/cygnusfear/maitake/cmd/mai@latest
 ```
 
+## Why
+
+Your tickets are in Jira. Reviews on GitHub. Docs in Notion. ADRs in a wiki.
+None of it travels with the code.
+
+`maitake` stores everything — tickets, code reviews, pull requests, docs,
+warnings, decisions — as **`git notes`** attached to your repo. One format,
+one CLI, one place.
+
+🤖 **Agent-native**</br>
+Agents create tickets, leave file-level findings, open PRs,
+and update docs through the same CLI. Every command supports `--json` output.
+No API keys, no platform auth, no network required. If you can run `git`, you
+can run `mai`.
+
+🕵️ **Private by default**</br> Your draft tickets, internal conversations, and PII stay local unless you choose otherwise. Git notes don't push with `git push`. maitake won't sync anything until you explicitly configure a remote — and even then, `github.com` is blocked out of the box.
+
+🔖 **One primitive.**</br> A ticket, a review finding, a doc, and a PR are all the
+same thing: a JSON line in `refs/notes/maitake` with a `kind` field. The
+vocabulary is open. The storage is append-only. Concurrent writes merge
+without conflicts via set-union.
+
+💼 **Forge-agnostic.**</br> Sync issues, PRs, docs to anything: GitHub, Forgejo, Gitea, or your own server via hooks. Switch forges without losing a single event. The decision trail of _why_ and _how_ stays with your codebase forever.
+
+🍄‍🟫 **A substrate for other apps.**</br> `maitake` is a primitive you want to build on. A [kanban board](https://github.com/Cygnusfear/ramboard), [multi-agent coordinator](https://github.com/Cygnusfear/pi-extensions), a diff viewer, an Obsidian clone — all powered by `maitake` underneath.
+
 ## 30-second tour
 
 ```bash
-mai init --remote origin --block github.com   # set up hooks + sync config
+mai init                                      # hooks + config (local only)
 mai ticket "Fix auth race" -p 1 -l auth --target src/auth.ts
 mai start mt-5c4a
-mai add-note mt-5c4a --file src/auth.ts --line 42 "Race condition here"
+mai add-note mt-5c4a --file src/auth.ts --line 42 "Race condition here if not implemented correctly"
 mai context src/auth.ts                       # see everything about a file
 mai close mt-5c4a -m "Fixed with mutex"
 ```
 
-Every write auto-pushes to the configured remote. Every note records the current git branch. Everything is JSON, append-only, and mergeable.
+Everything is JSON, append-only, and mergeable. Every event records the
+current git branch automatically.
 
 ## How it works
 
-Each ticket, warning, review finding, or comment is one JSON line in a git note. Nothing is mutated — state is computed by folding events:
+Each ticket, warning, review finding, or comment is one JSON line in a git
+note. Nothing is mutated — state is computed by folding events:
 
 ```
 {"id":"mt-5c4a","kind":"ticket","title":"Fix auth race","branch":"main","timestamp":"..."}
@@ -36,17 +67,32 @@ Each ticket, warning, review finding, or comment is one JSON line in a git note.
 
 Closed from `main` — the branch was merged. The event stream tells the story.
 
+## Comparison
+
+|                           | maitake                                     | [tk](https://github.com/wedow/ticket) | [lat.md](https://github.com/1st1/lat.md) | [mycelium](https://github.com/openprose/mycelium) | [entire.io](https://entire.io) | [git-bug](https://github.com/git-bug/git-bug) | [git-appraise](https://github.com/google/git-appraise) |
+| ------------------------- | ------------------------------------------- | ------------------------------------- | ---------------------------------------- | ------------------------------------------------- | ------------------------------ | --------------------------------------------- | ------------------------------------------------------ |
+| **Storage**               | git notes                                   | `.tickets/` files                     | `lat.md/` files                          | git notes                                         | shadow branch                  | custom git refs                               | git notes                                              |
+| **Scope**                 | tickets, reviews, PRs, docs, warnings, ADRs | tickets                               | knowledge graph                          | open-vocabulary notes                             | session checkpoints            | issues                                        | reviews                                                |
+| **Unified primitive**     | ✓                                           | —                                     | —                                        | ✓ (notes only)                                    | —                              | —                                             | —                                                      |
+| **Private by default**    | ✓ (nothing pushes without config)           | — (files in working tree)             | — (files in working tree)                | manual setup                                      | configurable                   | —                                             | ✓                                                      |
+| **PII / secret scanning** | built-in hooks, blocked hosts               | —                                     | —                                        | warns only                                        | —                              | —                                             | —                                                      |
+| **File-level targeting**  | ✓ (file + line)                             | —                                     | `@lat:` comments                         | ✓                                                 | —                              | —                                             | ✓                                                      |
+| **Agent-native CLI**      | ✓ (JSON)                                    | ✓ (markdown)                          | ✓ (needs OpenAI key)                     | ✓ (bash)                                          | background capture             | partial                                       | —                                                      |
+| **Doc sync**              | ✓ (CRDT, Obsidian-compatible)               | —                                     | —                                        | —                                                 | —                              | —                                             | —                                                      |
+| **Event-sourced**         | ✓ (append-only, set-union merge)            | — (mutable files)                     | — (mutable files)                        | — (mutable notes)                                 | ✓                              | ✓                                             | ✓                                                      |
+| **Language**              | Go                                          | Bash                                  | TypeScript                               | Bash                                              | TypeScript                     | Go                                            | Go                                                     |
+
 ## Commands
 
 ### Create
 
-| Command                     | What                          |
-| --------------------------- | ----------------------------- |
-| `mai ticket [title] [opts]` | Ticket (task by default)      |
-| `mai warn <path> [message]` | Warning on a file             |
-| `mai review [title] [opts]` | Code review (open, needs response) |
+| Command                       | What                                                      |
+| ----------------------------- | --------------------------------------------------------- |
+| `mai ticket [title] [opts]`   | Ticket (task by default)                                  |
+| `mai warn <path> [message]`   | Warning on a file                                         |
+| `mai review [title] [opts]`   | Code review (open, needs response)                        |
 | `mai artifact [title] [opts]` | Record/output (born closed — ADRs, research, mid-mortems) |
-| `mai create [title] [opts]` | Any kind — use `-k`           |
+| `mai create [title] [opts]`   | Any kind — use `-k`                                       |
 
 **Options:** `-k kind`, `-t title`, `--type type`, `-p priority`, `-a assignee`, `-l a,b` (tags), `--target path`, `-d description`
 
@@ -131,26 +177,42 @@ mai migrate [--dir .tickets/] [--dry-run]  # import tk tickets
 ## Setup
 
 ```bash
-mai init --remote forgejo --block github.com
+mai init                            # local only — no remote, no push
+mai init --remote forgejo           # enable auto-push to a remote
+mai init --remote forgejo --block github.com  # push to forgejo, block github
 ```
 
-This creates three things:
+This creates:
 
-1. **`.maitake/hooks/pre-write`** — scans notes for secrets before every write (gitleaks with regex fallback)
-2. **`.maitake/config`** — sync remote + blocked hosts
+1. **`.maitake/hooks/pre-write`** — scans for secrets before every write (gitleaks with regex fallback)
+2. **`.maitake/config.toml`** — sync remote + blocked hosts
 3. **`.gitignore` entry** — keeps `.maitake/` out of the repo
+
+Without `--remote`, nothing syncs anywhere. With `--remote`, every write
+auto-pushes `refs/notes/maitake` to that remote (debounced, conflict-safe).
+`github.com` is blocked by default even when a remote is configured.
 
 ### Config
 
-```
-remote forgejo
-blocked-host github.com
-blocked-host gitlab.com
+```toml
+[sync]
+remote = "forgejo"
+blocked-hosts = ["github.com", "gitlab.com"]
+
+[docs]
+sync = "auto"
+dir = ".mai-docs"
+
+[hooks]
+pre-write = true
+post-push = true
 ```
 
 ## Sync
 
-Every write auto-pushes `refs/notes/maitake` to the configured remote. On conflict: fetch + set-union merge + retry. Push failures warn but never block.
+When a remote is configured, every write auto-pushes `refs/notes/maitake`.
+On conflict: fetch + set-union merge + retry. Push failures warn but never
+block.
 
 Manual sync pulls remote changes:
 
@@ -195,17 +257,39 @@ chmod +x ~/.maitake/hooks/*
 
 Every repo gets these unless it provides its own.
 
-## File-located comments
+## Attach anything to a file
 
-Comments can target specific files (and lines) within a ticket:
+Tickets, warnings, decisions, and artifacts can target files directly. This is
+how you stick the *why* onto the *what*.
 
 ```bash
+# Warning on a file
+mai warn src/auth.ts "Race condition in token refresh"
+
+# ADR explaining a design decision, attached to the file it affects
+mai adr "Why topology lives in SpacetimeDB" --target src/physics/rebuild.rs \
+  -d "Convergence overhead is lower than mirroring + writeback cost. Revisit at 500+ entities."
+
+# Artifact (born closed) — research, analysis, post-mortem
+mai artifact "Perf analysis" --target src/physics/rebuild.rs -d "..."
+
+# Ticket targeting multiple files
 mai ticket "Auth hardening" --target src/auth.ts --target src/http.ts
+```
+
+Comments within a ticket can also target files and lines:
+
+```bash
 mai add-note mt-5c4a --file src/auth.ts "Add mutex around token refresh"
 mai add-note mt-5c4a --file src/http.ts --line 15 "Missing backoff"
 ```
 
-`mai context src/auth.ts` shows the ticket and only auth.ts comments — not http.ts comments. Review agents leave findings on files, fix agents see exactly what to address.
+`mai context <path>` shows everything attached to a file — tickets, warnings,
+decisions, review findings — filtered to only that file's comments:
+
+```bash
+mai context src/auth.ts    # what do we know about this file?
+```
 
 ## Branch tracking
 
@@ -239,7 +323,10 @@ Preserves original IDs, timestamps, deps, links, parent refs, Forgejo issue numb
 
 ## Privacy
 
-Notes refs don't push by default — git ignores them. Only the remote configured in `.maitake/config` receives notes. Blocked hosts are checked before every push.
+Git notes don't push by default — `git push` ignores them entirely. maitake
+only pushes to the remote you configure in `.maitake/config.toml`. Blocked
+hosts are checked before every push. No remote configured = nothing leaves
+your machine.
 
 ## Design
 
@@ -251,5 +338,8 @@ Notes refs don't push by default — git ignores them. Only the remote configure
 
 ### References
 
-- [openprose/mycelium](https://github.com/openprose/mycelium) — git notes substrate
+- [wedow/ticket](https://github.com/wedow/ticket) — git-backed ticket tracker (maitake's predecessor used this as starting point)
+- [openprose/mycelium](https://github.com/openprose/mycelium) — git notes substrate for agent communication
 - [google/git-appraise](https://github.com/google/git-appraise) — code review on git notes (Apache 2.0, repository package adapted)
+- [1st1/lat.md](https://github.com/1st1/lat.md) — markdown knowledge graph for codebases
+- [entire.io](https://entire.io) — AI session checkpoints stored in git

@@ -104,7 +104,8 @@ type State struct {
 	Resolved  *bool     `json:"resolved,omitempty"`
 	Edited    bool      `json:"edited,omitempty"`    // true if body was revised
 	Revisions int       `json:"revisions,omitempty"` // number of body edits
-	YDocState []byte    `json:"-"`                   // CRDT state (binary, not in JSON output)
+	YDocState    []byte `json:"-"`                   // CRDT state (binary, not in JSON output)
+	LastSyncBody string `json:"-"`                   // body at last successful docs sync (not in JSON)
 	Branch    string    `json:"branch,omitempty"`    // branch at creation time
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

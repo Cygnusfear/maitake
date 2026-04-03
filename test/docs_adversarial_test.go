@@ -642,6 +642,258 @@ func TestDocsSync_DuplicateTargetsReportConflict(t *testing.T) {
 	}
 }
 
+// ── CRDT merge regression: repeated syncs must not duplicate content ─────
+
+// TestDocs_RepeatedSyncs_NoDuplication is the regression test for the
+// stale-merge-base bug. Before the fix, mergeViaCRDT used creationBody
+// as the 3-way merge base forever. After N sync cycles both peers would
+// diff from that ancient base, producing overlapping inserts. The CRDT
+// preserved both → exponential duplication (2x per cycle).
+func TestDocs_RepeatedSyncs_NoDuplication(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	note, _ := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "NoDup",
+		Body:  "if one day we can merge safely, we need the right base.",
+	})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	filePath := filepath.Join(dir, "docs", "nodup.md")
+
+	// Simulate 6 rounds of Obsidian-style full-file saves with small edits.
+	edits := []string{
+		"if one day we can merge safely, we need the right base.\nEdit 1.",
+		"if one day we can merge safely, we need the right base.\nEdit 1.\nEdit 2.",
+		"if one day we can merge safely, we need the right base.\nEdit 1.\nEdit 2.\nEdit 3.",
+		"if one day we can merge safely, we need the right base.\nEdit 1.\nEdit 2.\nEdit 3.\nEdit 4.",
+		"if one day we can merge safely, we need the right base.\nEdit 1.\nEdit 2.\nEdit 3.\nEdit 4.\nEdit 5.",
+		"if one day we can merge safely, we need the right base.\nEdit 1.\nEdit 2.\nEdit 3.\nEdit 4.\nEdit 5.\nEdit 6.",
+	}
+
+	for i, content := range edits {
+		// Full-file rewrite (what Obsidian does)
+		data, _ := os.ReadFile(filePath)
+		_, body := notes.ParseMaiFrontmatterExported(string(data))
+		_ = body
+		// Reconstruct file with frontmatter + new body
+		id, _ := notes.ParseMaiFrontmatterExported(string(data))
+		fm := "---\nmai-id: " + id + "\n---\n"
+		os.WriteFile(filePath, []byte(fm+content+"\n"), 0644)
+
+		result, err := notes.SyncDocs(engine, dir, docsCfg)
+		if err != nil {
+			t.Fatalf("round %d: sync error: %v", i+1, err)
+		}
+
+		// After each sync, the note body must exactly match what we wrote
+		state, _ := engine.Fold(note.ID)
+		if strings.TrimSpace(state.Body) != strings.TrimSpace(content) {
+			t.Fatalf("round %d: body mismatch.\nExpected: %q\nGot:      %q", i+1, content, state.Body)
+		}
+
+		// Content must NOT be duplicated — check that key phrase appears once
+		count := strings.Count(state.Body, "if one day we can merge safely")
+		if count != 1 {
+			t.Fatalf("round %d: duplication detected! 'if one day we can merge safely' appears %d times.\nBody: %q",
+				i+1, count, state.Body)
+		}
+
+		_ = result
+	}
+}
+
+// TestDocs_ConcurrentNoteAndFileEdits_NoDuplication tests that both note-side
+// and file-side edits merge cleanly across multiple sync cycles without
+// duplication.
+func TestDocs_ConcurrentNoteAndFileEdits_NoDuplication(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	note, _ := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "Concurrent",
+		Body:  "Base content.\n",
+	})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	filePath := filepath.Join(dir, "docs", "concurrent.md")
+
+	for i := 0; i < 5; i++ {
+		// Agent edits note body
+		state, _ := engine.Fold(note.ID)
+		newNoteBody := state.Body + "Agent line " + string(rune('A'+i)) + ".\n"
+		engine.Append(notes.AppendOptions{
+			TargetID: note.ID,
+			Kind:     "event",
+			Field:    "body",
+			Body:     newNoteBody,
+		})
+
+		// User edits file (adds a different line)
+		data, _ := os.ReadFile(filePath)
+		id, body := notes.ParseMaiFrontmatterExported(string(data))
+		userBody := body + "User line " + string(rune('1'+i)) + ".\n"
+		fm := "---\nmai-id: " + id + "\n---\n"
+		os.WriteFile(filePath, []byte(fm+userBody+"\n"), 0644)
+
+		// Sync
+		_, err := notes.SyncDocs(engine, dir, docsCfg)
+		if err != nil {
+			t.Fatalf("round %d: %v", i+1, err)
+		}
+
+		// No duplication — "Base content" should appear exactly once
+		merged, _ := engine.Fold(note.ID)
+		count := strings.Count(merged.Body, "Base content")
+		if count != 1 {
+			t.Fatalf("round %d: 'Base content' appears %d times (expected 1).\nBody: %q",
+				i+1, count, merged.Body)
+		}
+
+		// Body size should grow linearly, not exponentially
+		// Each round adds ~2 lines (~30 chars). After 5 rounds: ~250 chars max.
+		if len(merged.Body) > 1000 {
+			t.Fatalf("round %d: body size explosion (%d chars). Likely duplication.\nBody: %q",
+				i+1, len(merged.Body), merged.Body)
+		}
+	}
+}
+
+// TestDocs_LargeDocument_StableSize ensures a large document doesn't explode
+// in size across sync cycles.
+func TestDocs_LargeDocument_StableSize(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	// Build a ~2700 word document
+	var body strings.Builder
+	body.WriteString("# Large Document\n\n")
+	for i := 0; i < 100; i++ {
+		body.WriteString("This is paragraph number ")
+		body.WriteString(string(rune('0' + i/100)))
+		body.WriteString(string(rune('0' + (i/10)%10)))
+		body.WriteString(string(rune('0' + i%10)))
+		body.WriteString(". It contains enough words to simulate a real document that someone would edit in Obsidian.\n\n")
+	}
+	originalBody := body.String()
+	originalSize := len(originalBody)
+
+	note, _ := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "LargeDoc",
+		Body:  originalBody,
+	})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	filePath := filepath.Join(dir, "docs", "largedoc.md")
+
+	// 5 rounds of small edits on a large document
+	for i := 0; i < 5; i++ {
+		data, _ := os.ReadFile(filePath)
+		id, currentBody := notes.ParseMaiFrontmatterExported(string(data))
+		// Append one line
+		editedBody := currentBody + "Edit round " + string(rune('A'+i)) + ".\n"
+		fm := "---\nmai-id: " + id + "\n---\n"
+		os.WriteFile(filePath, []byte(fm+editedBody+"\n"), 0644)
+
+		notes.SyncDocs(engine, dir, docsCfg)
+	}
+
+	state, _ := engine.Fold(note.ID)
+	finalSize := len(state.Body)
+
+	// Should be within 20% of original + edits (~50 chars of edits)
+	maxExpected := int(float64(originalSize)*1.2) + 200
+	if finalSize > maxExpected {
+		t.Fatalf("document size exploded: original=%d, final=%d, max=%d.\nLikely duplication.",
+			originalSize, finalSize, maxExpected)
+	}
+}
+
+// TestDocs_FileOnlyEdit_NoFileRewrite verifies that when only the file
+// changed (user editing in Obsidian), the daemon updates the note but does
+// NOT rewrite the file. This prevents Obsidian's "file changed externally"
+// dialog from appearing during normal editing.
+func TestDocs_FileOnlyEdit_NoFileRewrite(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	note, _ := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "NoRewrite",
+		Body:  "Original content.",
+	})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	filePath := filepath.Join(dir, "docs", "norewrite.md")
+
+	// User edits the file in Obsidian (full file rewrite)
+	data, _ := os.ReadFile(filePath)
+	id, _ := notes.ParseMaiFrontmatterExported(string(data))
+	newBody := "Original content.\nUser added this line."
+	fm := "---\nmai-id: " + id + "\n---\n"
+	os.WriteFile(filePath, []byte(fm+newBody+"\n"), 0644)
+
+	// Record the file's modification time BEFORE sync
+	info1, _ := os.Stat(filePath)
+	mtime1 := info1.ModTime()
+
+	// Small delay to ensure mtime would differ if file were rewritten
+	time.Sleep(50 * time.Millisecond)
+
+	// Sync — should update note but NOT rewrite the file
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	// Verify the note was updated
+	state, _ := engine.Fold(note.ID)
+	if !strings.Contains(state.Body, "User added this line") {
+		t.Fatalf("note should have file's content after sync.\nBody: %q", state.Body)
+	}
+
+	// Verify the file was NOT rewritten (mtime unchanged)
+	info2, _ := os.Stat(filePath)
+	mtime2 := info2.ModTime()
+	if !mtime1.Equal(mtime2) {
+		t.Fatalf("file should NOT be rewritten when only the file changed.\nmtime before: %v\nmtime after:  %v", mtime1, mtime2)
+	}
+
+	// Verify file content is exactly what the user wrote (not reconstructed)
+	data2, _ := os.ReadFile(filePath)
+	expected := fm + newBody + "\n"
+	if string(data2) != expected {
+		t.Fatalf("file content should be untouched.\nExpected: %q\nGot:      %q", expected, string(data2))
+	}
+}
+
+// TestDocs_NoteOnlyEdit_WritesFile verifies that when only the note
+// changed (agent edit), the file IS updated.
+func TestDocs_NoteOnlyEdit_WritesFile(t *testing.T) {
+	dir, engine := docEngine(t)
+
+	note, _ := engine.Create(notes.CreateOptions{
+		Kind:  "doc",
+		Title: "NoteOnly",
+		Body:  "Original content.",
+	})
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	// Agent edits the note (not the file)
+	engine.Append(notes.AppendOptions{
+		TargetID: note.ID,
+		Kind:     "event",
+		Field:    "body",
+		Body:     "Original content.\nAgent added this line.",
+	})
+
+	// Sync — should update the file
+	notes.SyncDocs(engine, dir, docsCfg)
+
+	// Verify the file was updated
+	filePath := filepath.Join(dir, "docs", "noteonly.md")
+	data, _ := os.ReadFile(filePath)
+	if !strings.Contains(string(data), "Agent added this line") {
+		t.Fatalf("file should have note's content after sync.\nFile: %s", string(data))
+	}
+}
+
 // ── Body with frontmatter-like content ───────────────────────────────────
 
 func TestDocs_BodyContainsDashDashDash(t *testing.T) {
