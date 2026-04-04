@@ -3,3 +3,5 @@
 {"kind":"event","field":"links","value":"+mai-bwzg","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-b3di"}}],"timestamp":"2026-04-04T13:13:48Z","branch":"main"}
 
 {"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-b3di"}}],"timestamp":"2026-04-04T13:26:40Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-b3di"}}],"body":"Implemented in 6255a68. LoadPlugins + ResolvePlugin + WriteDefaultPlugins in pkg/notes/plugin.go. CLI dispatch in cmd/mai/plugin.go. mai init writes plugins.toml.","timestamp":"2026-04-04T13:30:54Z","branch":"main"}
