@@ -5,3 +5,5 @@
 {"kind":"event","field":"links","value":"+mai-bwzg","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-bd6i"}}],"timestamp":"2026-04-04T13:13:49Z","branch":"main"}
 
 {"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-bd6i"}}],"timestamp":"2026-04-04T13:41:40Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-bd6i"}}],"body":"Implemented in cc02c62. cmd/mai-changelog/ standalone binary. new/ls/merge commands. Replaces tinychange with zero-file changelog entries as mai artifacts.","timestamp":"2026-04-04T13:44:14Z","branch":"main"}
