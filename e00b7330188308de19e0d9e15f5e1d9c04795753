@@ -3,3 +3,5 @@
 {"kind":"event","field":"deps","value":"+mai-b3di","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-pa86"}}],"timestamp":"2026-04-04T13:13:48Z","branch":"main"}
 
 {"kind":"event","field":"links","value":"+mai-bwzg","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-pa86"}}],"timestamp":"2026-04-04T13:13:48Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-pa86"}}],"timestamp":"2026-04-04T13:31:05Z","branch":"main"}
