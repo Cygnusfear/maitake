@@ -52,6 +52,8 @@ func main() {
 		runList(e, args[1:])
 	case "merge":
 		runMerge(e, args[1:])
+	case "migrate":
+		runMigrate(e, args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown changelog subcommand: %s\n", args[0])
 		printHelp()
@@ -67,6 +69,7 @@ Usage: mai-changelog <subcommand> [args]
   mai-changelog new "description" -k fix    Create a changelog entry
   mai-changelog ls                          List unreleased entries
   mai-changelog merge [--output FILE]       Render changelog to markdown
+  mai-changelog migrate [--dir .tinychange] Import from tinychange format
 
 Categories: fix, feat, chore, security, docs, refactor, perf, deploy, test
 
@@ -249,6 +252,149 @@ func entryCategory(s notes.State) string {
 		}
 	}
 	return "chore"
+}
+
+// --- Migrate ---
+
+// tinychangeEntry represents a parsed .tinychange/*.md file.
+type tinychangeEntry struct {
+	File   string
+	Author string
+	Kind   string
+	Body   string
+}
+
+func parseTinychangeFile(path string) (*tinychangeEntry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	content := string(data)
+	lines := strings.Split(content, "\n")
+
+	entry := &tinychangeEntry{File: filepath.Base(path)}
+
+	// Parse header lines until "---"
+	var bodyStart int
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "---" {
+			bodyStart = i + 1
+			break
+		}
+		if strings.HasPrefix(line, "- Author:") {
+			entry.Author = strings.TrimSpace(strings.TrimPrefix(line, "- Author:"))
+		} else if strings.HasPrefix(line, "- Kind:") {
+			entry.Kind = strings.TrimSpace(strings.TrimPrefix(line, "- Kind:"))
+		}
+	}
+
+	if bodyStart == 0 || bodyStart >= len(lines) {
+		return nil, fmt.Errorf("no frontmatter separator")
+	}
+
+	body := strings.TrimSpace(strings.Join(lines[bodyStart:], "\n"))
+	if body == "" {
+		return nil, fmt.Errorf("empty body")
+	}
+	entry.Body = body
+
+	if entry.Kind == "" {
+		entry.Kind = "chore"
+	}
+	return entry, nil
+}
+
+func runMigrate(e notes.Engine, args []string) {
+	dir := ".tinychange"
+	dryRun := false
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--dir":
+			i++
+			if i < len(args) {
+				dir = args[i]
+			}
+		case "--dry-run", "-n":
+			dryRun = true
+		}
+	}
+
+	sourceDir := filepath.Join(repoPath(), dir)
+	info, err := os.Stat(sourceDir)
+	if err != nil || !info.IsDir() {
+		cli.Fatal("migrate: %s does not exist or is not a directory", sourceDir)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(sourceDir, "*.md"))
+	if err != nil {
+		cli.Fatal("migrate: %v", err)
+	}
+	if len(matches) == 0 {
+		fmt.Printf("No .md files found in %s\n", sourceDir)
+		return
+	}
+
+	sort.Strings(matches)
+
+	migrated := 0
+	skipped := 0
+	for _, path := range matches {
+		entry, err := parseTinychangeFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  skip %s: %v\n", filepath.Base(path), err)
+			skipped++
+			continue
+		}
+
+		if dryRun {
+			fmt.Printf("  would migrate [%s] %s\n", entry.Kind, firstLineOf(entry.Body))
+			migrated++
+			continue
+		}
+
+		note, err := e.Create(notes.CreateOptions{
+			Kind:     "artifact",
+			Type:     "artifact",
+			Title:    firstLineOf(entry.Body),
+			Body:     entry.Body,
+			Assignee: entry.Author,
+			Tags:     []string{"changelog", entry.Kind},
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  error creating %s: %v\n", filepath.Base(path), err)
+			skipped++
+			continue
+		}
+
+		_, err = e.Append(notes.AppendOptions{
+			TargetID: note.ID,
+			Kind:     "event",
+			Field:    "status",
+			Value:    "closed",
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  error closing %s: %v\n", note.ID, err)
+		}
+
+		migrated++
+	}
+
+	if dryRun {
+		fmt.Printf("\nDry-run: would migrate %d entries from %s (%d skipped)\n", migrated, dir, skipped)
+	} else {
+		fmt.Printf("\nMigrated %d entries from %s (%d skipped)\n", migrated, dir, skipped)
+	}
+}
+
+func firstLineOf(s string) string {
+	for i, c := range s {
+		if c == '\n' {
+			return strings.TrimSpace(s[:i])
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 func renderChangelog(entries []notes.State) string {
