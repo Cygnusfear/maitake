@@ -59,9 +59,7 @@ func TestSearch_FilterByStatus(t *testing.T) {
 	dir := setupTestRepo(t)
 
 	// Create and close one ticket
-	out := mai(t, dir, "ticket", "closed auth bug", "-p", "1")
-	// Extract ticket ID from output
-	id := extractID(t, out)
+	id := mai(t, dir, "ticket", "closed auth bug", "-p", "1")
 	mai(t, dir, "close", id)
 
 	// Create an open ticket
@@ -101,15 +99,4 @@ func TestSearch_RankedResults(t *testing.T) {
 	}
 }
 
-// extractID pulls the note ID from mai output like "Created mai-xxxx"
-func extractID(t *testing.T, output string) string {
-	t.Helper()
-	// Look for mai-XXXX or similar ID pattern
-	for _, word := range strings.Fields(output) {
-		if strings.HasPrefix(word, "mai-") {
-			return word
-		}
-	}
-	t.Fatalf("could not extract ID from: %s", output)
-	return ""
-}
+

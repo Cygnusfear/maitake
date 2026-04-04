@@ -277,7 +277,15 @@ func runSearch(e notes.Engine, args []string) {
 		if len(r.State.Tags) > 0 {
 			tags = " [" + strings.Join(r.State.Tags, ",") + "]"
 		}
-		fmt.Printf("%-8s [%5.2f] (%s) %s%s\n", r.ID, r.Score, r.State.Status, r.State.Title, tags)
+		// Truncate title to first line, max 80 chars
+		title := r.State.Title
+		if idx := strings.IndexByte(title, '\n'); idx >= 0 {
+			title = title[:idx]
+		}
+		if len(title) > 80 {
+			title = title[:77] + "..."
+		}
+		fmt.Printf("%-8s [%5.2f] (%s) %s%s\n", r.ID, r.Score, r.State.Status, title, tags)
 	}
 }
 
