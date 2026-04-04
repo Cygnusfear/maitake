@@ -111,7 +111,9 @@ mai close <ticket-id> -m "summary of what was done"
 ```bash
 mai ls                          # open work queue (sorted by priority)
 mai ls -k ticket                # only tickets
-mai ls -l review            # review tasks
+mai ls -l review                # review tasks
+mai search "auth"               # find related notes, tickets, decisions
+mai search "auth" -k ticket     # search within tickets only
 mai ready                       # unblocked — can start now
 mai blocked                     # waiting on deps
 mai dep tree <epic-id>          # full work breakdown

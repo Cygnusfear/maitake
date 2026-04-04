@@ -26,6 +26,7 @@ teams delegate [{
 
 ```bash
 mai show res-1234                  # read the assignment
+mai search "token refresh"         # find prior research and decisions on this topic
 # ... investigate code, run experiments, read docs ...
 
 mai add-note res-1234 "## Findings

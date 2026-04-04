@@ -148,6 +148,9 @@ mai show <id>                   # full state with comments
 mai ls                          # open + in_progress (work queue)
 mai ls --status=all             # everything
 mai ls -k warning               # filter by kind
+mai search "auth race"          # BM25 full-text search across all notes
+mai search "fix" -k ticket      # search within a kind
+mai search "merge" --limit 5    # top N results
 mai closed                      # recently closed
 mai context <path>              # everything targeting a file
 mai ready                       # unblocked work
@@ -162,6 +165,7 @@ mai doctor                      # graph health
 ```bash
 mai --json ls                   # JSON array of summaries
 mai --json show <id>            # JSON state with events + comments
+mai --json search "query"       # JSON array of {id, score, state}
 mai --json context <path>       # JSON array of states
 mai -C /path/to/repo --json ls  # query a different repo
 ```
@@ -334,6 +338,7 @@ your machine.
 - **Append-only** — changes via events, never mutation
 - **Set-union merge** — `cat | sort | uniq` resolves conflicts (inherited from git-appraise)
 - **Kind-agnostic** — tickets, warnings, constraints, decisions, reviews are all notes with different `kind` fields
+- **Full-text search** — BM25 scoring with field weighting (title 3×, tags 2×, body 1×, comments 0.5×). Combines with kind/status/tag filtering.
 - **Performance** — 10,000 notes: index build <20ms, query <1ms. Cache eliminates git reads on warm start.
 
 ### References

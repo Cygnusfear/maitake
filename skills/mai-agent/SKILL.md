@@ -27,6 +27,7 @@ mai context <file-you-will-touch>     # open tickets, warnings, constraints, rev
 mai ls                                 # open work queue
 mai ls -k constraint                   # hard rules you must follow
 mai ls -k warning                      # known fragile areas
+mai search "topic you're working on"   # find related notes, decisions, history
 mai ready                              # what can start next
 mai blocked                            # what's stuck on deps
 ```
@@ -148,8 +149,11 @@ mai sync                      # fetch + merge + push
 mai show <id>                 # full state with comments
 mai ls                        # open work queue (default: open + in_progress)
 mai ls -k <kind>              # filter by kind
-mai ls -l <tag>           # filter by tag
+mai ls -l <tag>               # filter by tag
 mai ls --status=all           # everything including closed
+mai search "query"            # BM25 full-text search across all notes
+mai search "auth" -k ticket   # search within a kind
+mai search "fix" --limit 5    # top N results
 mai closed                    # recently closed
 mai context <path>            # everything about a file
 mai ready                     # unblocked work

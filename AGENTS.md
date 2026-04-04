@@ -11,7 +11,7 @@ Everything is a note — tickets, reviews, PRs, docs, warnings, ADRs, changelog 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  mai CLI (substrate)                                 │
-│  create, append, fold, find, ls, context, sync       │
+│  create, append, fold, find, search, ls, context     │
 │  + zero-logic shortcuts: ticket, warn, adr, artifact │
 ├─────────────────────────────────────────────────────┤
 │  Plugin dispatch (.maitake/plugins.toml)             │

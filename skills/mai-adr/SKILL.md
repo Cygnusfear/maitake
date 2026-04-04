@@ -94,6 +94,9 @@ These refs are validated by `mai check` and reverse-lookable via `mai refs <id>`
 # All decisions
 mai ls -k decision
 
+# Search decisions by topic
+mai search "token refresh" -k decision
+
 # Decisions affecting a specific file
 mai context src/auth.ts
 

@@ -36,6 +36,7 @@ teams delegate [{
 mai show tre-5c4a             # read the review ticket
 mai context src/auth.ts       # see existing notes
 mai context src/http.ts
+mai search "auth" -k decision # find prior decisions about this area
 ```
 
 ### 2. Leave findings on each file

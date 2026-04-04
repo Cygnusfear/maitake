@@ -85,6 +85,7 @@ cd repo
 mai init --remote origin
 mai sync                  # pulls existing notes from remote
 mai ls                    # see the work queue
+mai search "topic"        # search across all notes
 ```
 
 ## Guard hooks
