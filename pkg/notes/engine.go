@@ -1,7 +1,6 @@
 package notes
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,12 +8,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cygnusfear/maitake/pkg/crdt"
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/guard"
 )
 
 const pushDebounceDelay = 500 * time.Millisecond
+
+// PostWriteFunc is called after a note is written (Create or Append).
+// noteID is the note that was written; ref and targetOID are the git plumbing details.
+type PostWriteFunc func(engine Engine, noteID string, ref git.NotesRef, targetOID git.OID)
 
 // RealEngine implements Engine using a git repo, guard hooks, and an in-memory index.
 type RealEngine struct {
@@ -30,6 +32,22 @@ type RealEngine struct {
 	pushPending bool
 	pushTimer   *time.Timer
 	lastNoteID  string // most recent note ID for hook
+
+	// Post-write hooks — external packages (e.g. pkg/docs) register here
+	postWriteHooks []PostWriteFunc
+}
+
+// OnPostWrite registers a callback that fires after every Create or Append.
+// Used by pkg/docs to implement auto-sync without the engine importing doc logic.
+func (e *RealEngine) OnPostWrite(fn PostWriteFunc) {
+	e.postWriteHooks = append(e.postWriteHooks, fn)
+}
+
+// firePostWrite invokes all registered post-write hooks.
+func (e *RealEngine) firePostWrite(noteID string, ref git.NotesRef, targetOID git.OID) {
+	for _, fn := range e.postWriteHooks {
+		fn(e, noteID, ref, targetOID)
+	}
 }
 
 // NewEngine creates a new Engine backed by the given git repo.
@@ -137,7 +155,7 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		if docsDir == "" {
 			docsDir = ".mai-docs"
 		}
-		slug := slugify(note.Title)
+		slug := Slugify(note.Title)
 		if slug == "" {
 			slug = note.ID
 		}
@@ -196,19 +214,14 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	e.index.Ingest(note)
 	e.index.Build()
 
-	// For doc notes, initialize CRDT state from body
-	if opts.Kind == "doc" && opts.Body != "" {
-		e.initYDoc(note.ID, opts.Body, ref, targetOID)
-	}
-
 	// Update cache with new ref tip
 	e.updateCache(ref)
 
 	// Auto-push to remote (debounced — coalesces rapid writes)
 	e.schedulePush(ref, note.ID)
 
-	// Auto-sync docs if configured
-	e.autoSyncDoc(note.ID)
+	// Fire post-write hooks (e.g. doc auto-sync, CRDT init)
+	e.firePostWrite(note.ID, ref, targetOID)
 
 	return note, nil
 }
@@ -322,7 +335,8 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		if body == "" {
 			body = opts.Value
 		}
-		e.updateYDoc(fullID, body, ref, targetOID)
+		// Post-write hooks handle CRDT updates (via pkg/docs)
+		_ = body // used by hooks via engine.Fold
 	}
 
 	// Update cache with new ref tip
@@ -332,7 +346,8 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	e.schedulePush(ref, fullID)
 
 	// Auto-sync docs if configured
-	e.autoSyncDoc(fullID)
+	// Fire post-write hooks (e.g. doc auto-sync, CRDT update)
+	e.firePostWrite(fullID, ref, targetOID)
 
 	return note, nil
 }
@@ -638,192 +653,22 @@ func (e *RealEngine) Sync() error {
 	return nil
 }
 
-// autoSyncDoc materializes a doc note to disk if docs.sync is "auto".
+// Note: autoSyncDoc, updateYDoc, initYDoc, prevNoteBody moved to pkg/docs.
+// The engine fires postWriteHooks instead — see OnPostWrite().
 
-// updateYDoc loads the existing YDoc state, diffs old vs new body, applies ops, saves.
-func (e *RealEngine) updateYDoc(noteID, newBody string, ref git.NotesRef, targetOID git.OID) {
-	// Get current state from fold
-	state, err := e.Fold(noteID)
-	if err != nil {
-		return
-	}
-
-	var doc *crdt.TextDoc
-	if state.YDocState != nil {
-		doc, err = crdt.Load(state.YDocState)
-	} else {
-		// No YDoc yet — initialize from the previous body
-		doc, err = crdt.New()
-		if err == nil {
-			// Insert the OLD body (before this edit)
-			// The fold already applied our body event, so state.Body IS newBody.
-			// We need the old body. Get it from events.
-			oldBody := ""
-			if creation := e.index.CreationNotes[noteID]; creation != nil {
-				oldBody = creation.Body
-			}
-			// Replay previous body events to get the body BEFORE this edit
-			for _, ev := range state.Events {
-				if ev.Field == "body" {
-					evBody := ev.Body
-					if evBody == "" {
-						evBody = ev.Value
-					}
-					// Skip the last body event (that's the one we just wrote)
-					if evBody == newBody {
-						break
-					}
-					oldBody = evBody
-				}
-			}
-			doc.Insert(0, oldBody)
-		}
-	}
-	if err != nil {
-		return
-	}
-	defer doc.Close()
-
-	// Diff YDoc content vs new body, apply ops
-	ydocContent, _ := doc.Content()
-	ops := crdt.Diff(ydocContent, newBody)
-	if err := crdt.ApplyOps(doc, ops); err != nil {
-		return
-	}
-
-	newState, err := doc.Save()
-	if err != nil {
-		return
-	}
-
-	// Emit ydoc event
-	encoded := base64.StdEncoding.EncodeToString(newState)
-	ydocNote := &Note{
-		Kind:      "event",
-		Field:     "ydoc",
-		Value:     encoded,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Branch:    e.currentGitBranch(),
-		Edges: []Edge{{
-			Type:   "updates",
-			Target: EdgeTarget{Kind: "note", Ref: noteID},
-		}},
-	}
-	data, err := Serialize(ydocNote)
-	if err != nil {
-		return
-	}
+// AppendRaw writes a pre-serialized note to git and re-ingests it into the index.
+// Used by post-write hooks (e.g. pkg/docs CRDT) that need to emit events.
+func (e *RealEngine) AppendRaw(ref git.NotesRef, targetOID git.OID, data []byte, note *Note) {
 	if err := e.repo.AppendNote(ref, targetOID, git.Note(data)); err != nil {
 		return
 	}
-	e.index.Ingest(ydocNote)
+	e.index.Ingest(note)
 	e.index.Build()
 }
 
-// initYDoc creates a YDoc from body text and stores its state as a ydoc event.
-func (e *RealEngine) initYDoc(noteID, body string, ref git.NotesRef, targetOID git.OID) {
-	doc, err := crdt.New()
-	if err != nil {
-		return // CRDT not available, skip silently
-	}
-	defer doc.Close()
-
-	if err := doc.Insert(0, body); err != nil {
-		return
-	}
-	state, err := doc.Save()
-	if err != nil {
-		return
-	}
-
-	// Emit ydoc event with base64-encoded state
-	encoded := base64.StdEncoding.EncodeToString(state)
-	ydocNote := &Note{
-		Kind:      "event",
-		Field:     "ydoc",
-		Value:     encoded,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Branch:    e.currentGitBranch(),
-		Edges: []Edge{{
-			Type:   "updates",
-			Target: EdgeTarget{Kind: "note", Ref: noteID},
-		}},
-	}
-	data, err := Serialize(ydocNote)
-	if err != nil {
-		return
-	}
-	if err := e.repo.AppendNote(ref, targetOID, git.Note(data)); err != nil {
-		return
-	}
-	// Re-ingest so fold sees it in current session
-	e.index.Ingest(ydocNote)
-	e.index.Build()
-}
-
-// prevNoteBody returns the note body as it was BEFORE the most recent body
-// event. Used by autoSyncDoc to tell apart a stale file (note just changed)
-// from a file the user independently edited (file wins on conflict).
-func (e *RealEngine) prevNoteBody(noteID string) string {
-	creation := e.index.CreationNotes[noteID]
-	state := e.index.States[noteID]
-	if creation == nil || state == nil {
-		return ""
-	}
-	// Walk events in order, tracking body before the last body event.
-	cur := creation.Body
-	prev := cur
-	for _, ev := range state.Events {
-		if ev.Kind == "event" && ev.Field == "body" {
-			prev = cur
-			b := ev.Value
-			if ev.Body != "" {
-				b = ev.Body
-			}
-			cur = b
-		}
-	}
-	return prev
-}
-
-// autoSyncDoc materializes a doc note to disk when docs.sync is "auto".
-//
-// Write policy:
-//   - closed note  → mark closed: true in frontmatter, keep the file
-//   - file missing → write it
-//   - file matches PREVIOUS note body → note just changed, overwrite with new body
-//   - file differs from PREVIOUS body → user edited the file, leave it for full sync
-func (e *RealEngine) autoSyncDoc(noteID string) {
-	if e.config.Docs.Sync != "auto" {
-		return
-	}
-
-	state := e.index.States[noteID]
-	if state == nil || state.Kind != "doc" {
-		return
-	}
-
-	targetPath := docTargetPath(state, e.config.Docs.Dir)
-	absPath := filepath.Join(e.repoPath, targetPath)
-
-	if state.Status == "closed" {
-		markDocFileClosed(absPath, state.ID)
-		return
-	}
-
-	// If the file exists, compare its body to what the note looked like BEFORE
-	// the most recent edit. If they match, the file is just stale — safe to
-	// overwrite. If they differ, the user edited the file independently; leave
-	// it for the next full docs sync.
-	if data, err := os.ReadFile(absPath); err == nil {
-		_, existingBody := parseMaiFrontmatter(string(data))
-		prevBody := e.prevNoteBody(noteID)
-		if contentHash(existingBody) != contentHash(prevBody) {
-			return // file was independently edited — don't clobber
-		}
-	}
-
-	writeDocFile(absPath, state.ID, state.Body)
+// RepoPath returns the absolute path to the repo root.
+func (e *RealEngine) RepoPath() string {
+	return e.repoPath
 }
 
 // schedulePush debounces auto-push. Multiple writes within 500ms coalesce into one push.

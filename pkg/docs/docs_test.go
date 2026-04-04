@@ -2,6 +2,7 @@ package docs
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,18 +14,31 @@ import (
 func setupRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	repo, err := git.InitRepo(dir)
-	if err != nil {
-		t.Fatal(err)
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %s\n%s", args, err, out)
+		}
 	}
-	// Need an initial commit for notes to attach to
+
+	run("init")
+	run("config", "user.name", "Test")
+	run("config", "user.email", "test@test.com")
+
 	os.WriteFile(filepath.Join(dir, "init"), []byte("init"), 0644)
-	if err := repo.Add("."); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.Commit("init"); err != nil {
-		t.Fatal(err)
-	}
+	run("add", "-A")
+	run("commit", "-m", "init")
+
 	return dir
 }
 

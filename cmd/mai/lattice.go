@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
@@ -16,7 +17,7 @@ func runDocsSync(e notes.Engine, args []string) {
 		dir = cwd
 	}
 
-	cfg := notes.DocsConfig{}
+	cfg := docs.Config{}
 	dryRun := false
 
 	for i := 0; i < len(args); i++ {
@@ -43,7 +44,7 @@ func runDocsSync(e notes.Engine, args []string) {
 	warnIfNotGitignored(dir, cfg.Dir)
 
 	// Dry-run first to preview
-	preview, err := notes.SyncDocs(e, dir, cfg, notes.DocSyncOptions{DryRun: true})
+	preview, err := docs.SyncDocs(e, dir, cfg, docs.SyncOptions{DryRun: true})
 	if err != nil {
 		fatal("docs sync: %v", err)
 	}
@@ -73,7 +74,7 @@ func runDocsSync(e notes.Engine, args []string) {
 	}
 
 	// Execute for real
-	result, err := notes.SyncDocs(e, dir, cfg)
+	result, err := docs.SyncDocs(e, dir, cfg)
 	if err != nil {
 		fatal("docs sync: %v", err)
 	}
@@ -101,7 +102,7 @@ func warnIfNotGitignored(repoPath, docsDir string) {
 	}
 }
 
-func printSyncResult(result *notes.DocSyncResult, dryRun bool) {
+func printSyncResult(result *docs.SyncResult, dryRun bool) {
 	prefix := ""
 	if dryRun {
 		prefix = "(dry-run) "

@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/notes"
 	"github.com/fsnotify/fsnotify"
 )
 
 // simulateDaemon runs the core daemon loop for a single repo.
 // Returns a stop function. Watches repo root, filters to docs dir.
-func simulateDaemon(t *testing.T, repoPath string, cfg notes.DocsConfig) func() {
+func simulateDaemon(t *testing.T, repoPath string, cfg docs.Config) func() {
 	t.Helper()
 
 	docsDir := filepath.Join(repoPath, cfg.Dir)
@@ -72,7 +73,7 @@ func simulateDaemon(t *testing.T, repoPath string, cfg notes.DocsConfig) func() 
 					// Sync
 					repo, _ := git.NewGitRepo(repoPath)
 					engine, _ := notes.NewEngine(repo)
-					notes.SyncDocs(engine, repoPath, cfg)
+					docs.SyncDocs(engine, repoPath, cfg)
 					_ = path
 				}
 
@@ -115,7 +116,7 @@ func TestDaemon_SurvivesRmRfDocs(t *testing.T) {
 	dir := setupRepo(t)
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 
 	// Create doc and materialize
 	note, _ := engine.Create(notes.CreateOptions{
@@ -123,7 +124,7 @@ func TestDaemon_SurvivesRmRfDocs(t *testing.T) {
 		Title: "Survivor",
 		Body:  "Original body.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	// Start daemon
 	stopDaemon := simulateDaemon(t, dir, cfg)
@@ -151,7 +152,7 @@ func TestDaemon_SurvivesRmRfDocs(t *testing.T) {
 	// Restore
 	repo3, _ := git.NewGitRepo(dir)
 	engine3, _ := notes.NewEngine(repo3)
-	notes.SyncDocs(engine3, dir, cfg)
+	docs.SyncDocs(engine3, dir, cfg)
 
 	// Edit AGAIN after restore — daemon must still be watching
 	data2, _ := os.ReadFile(filePath)
@@ -172,7 +173,7 @@ func TestDaemon_CatchesNewFileInRecreatedDir(t *testing.T) {
 	dir := setupRepo(t)
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 
 	// Create initial doc
 	engine.Create(notes.CreateOptions{
@@ -180,7 +181,7 @@ func TestDaemon_CatchesNewFileInRecreatedDir(t *testing.T) {
 		Title: "Initial",
 		Body:  "First doc.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	// Start daemon
 	stopDaemon := simulateDaemon(t, dir, cfg)
@@ -216,14 +217,14 @@ func TestDaemon_MultipleRapidEditsAfterRmRf(t *testing.T) {
 	dir := setupRepo(t)
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 
 	note, _ := engine.Create(notes.CreateOptions{
 		Kind:  "doc",
 		Title: "Rapid",
 		Body:  "Start.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 	filePath := filepath.Join(dir, "docs", "rapid.md")
 
 	stopDaemon := simulateDaemon(t, dir, cfg)
@@ -235,7 +236,7 @@ func TestDaemon_MultipleRapidEditsAfterRmRf(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, cfg)
+	docs.SyncDocs(engine2, dir, cfg)
 	time.Sleep(300 * time.Millisecond) // let daemon pick up recreated dir
 
 	// 5 rapid edits
@@ -266,7 +267,7 @@ func TestDaemon_AtomicSaveDoesNotTombstone(t *testing.T) {
 	dir := setupRepo(t)
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 
 	// Create doc note and materialize file.
 	note, _ := engine.Create(notes.CreateOptions{
@@ -274,7 +275,7 @@ func TestDaemon_AtomicSaveDoesNotTombstone(t *testing.T) {
 		Title: "Atomic",
 		Body:  "Before atomic save.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	filePath := filepath.Join(dir, "docs", "atomic.md")
 	if _, err := os.Stat(filePath); err != nil {

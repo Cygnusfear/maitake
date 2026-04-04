@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
@@ -19,7 +20,7 @@ func docEngine(t *testing.T) (string, notes.Engine) {
 	return dir, engine
 }
 
-var docsCfg = notes.DocsConfig{Dir: "docs"}
+var docsCfg = docs.Config{Dir: "docs"}
 
 // ── Frontmatter corruption ───────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ func TestDocs_CorruptedFrontmatter_StillImports(t *testing.T) {
 	// File with broken frontmatter (unclosed ---)
 	os.WriteFile(filepath.Join(docsDir, "broken.md"), []byte("---\nmai-id: fake\ntitle: oops\n# No closing frontmatter\n\nContent here.\n"), 0644)
 
-	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	result, err := docs.SyncDocs(engine, dir, docsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestDocs_FrontmatterPointsToNonexistentNote(t *testing.T) {
 	// File with valid frontmatter but note doesn't exist
 	os.WriteFile(filepath.Join(docsDir, "ghost.md"), []byte("---\nmai-id: nonexistent-note\n---\n# Ghost\n\nThis note doesn't exist.\n"), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	// Should not crash. The file has a mai-id that points nowhere.
 	// It should NOT be imported as new (it has a mai-id).
 	// It should NOT be written (no matching note).
@@ -67,7 +68,7 @@ func TestDocs_EmptyFile_Imports(t *testing.T) {
 
 	os.WriteFile(filepath.Join(docsDir, "empty.md"), []byte(""), 0644)
 
-	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	result, err := docs.SyncDocs(engine, dir, docsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +84,7 @@ func TestDocs_WhitespaceOnlyFile(t *testing.T) {
 
 	os.WriteFile(filepath.Join(docsDir, "spaces.md"), []byte("   \n\n   \n"), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 1 {
 		t.Errorf("whitespace file should import, got Imported=%d", len(result.Imported))
 	}
@@ -98,7 +99,7 @@ func TestDocs_SpecialCharsInFilename(t *testing.T) {
 
 	os.WriteFile(filepath.Join(docsDir, "my notes & stuff (2026).md"), []byte("# Notes\n\nWith special chars."), 0644)
 
-	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	result, err := docs.SyncDocs(engine, dir, docsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func TestDocs_UnicodeContent(t *testing.T) {
 		Title: "Unicode",
 		Body:  "# 日本語\n\n🍄 maitake はキノコです。\n\nEmoji: 🎉🔥💀\n",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Read back
 	files, _ := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
@@ -132,7 +133,7 @@ func TestDocs_UnicodeContent(t *testing.T) {
 	os.RemoveAll(filepath.Join(dir, "docs"))
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, docsCfg)
+	docs.SyncDocs(engine2, dir, docsCfg)
 
 	data2, _ := os.ReadFile(files[0])
 	if !strings.Contains(string(data2), "🍄") {
@@ -151,7 +152,7 @@ func TestDocs_NestedSubdirectories(t *testing.T) {
 	os.WriteFile(filepath.Join(nested, "oauth.md"), []byte("# OAuth\n\nOAuth2 flow."), 0644)
 	os.WriteFile(filepath.Join(nested, "jwt.md"), []byte("# JWT\n\nToken handling."), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 2 {
 		t.Fatalf("should import 2 nested files, got %d", len(result.Imported))
 	}
@@ -160,7 +161,7 @@ func TestDocs_NestedSubdirectories(t *testing.T) {
 	os.RemoveAll(filepath.Join(dir, "docs"))
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, docsCfg)
+	docs.SyncDocs(engine2, dir, docsCfg)
 
 	if _, err := os.Stat(filepath.Join(nested, "oauth.md")); err != nil {
 		t.Error("nested file should be restored with directory structure")
@@ -177,7 +178,7 @@ func TestDocs_BothNoteAndFileChanged(t *testing.T) {
 		Title: "Conflict",
 		Body:  "Original.",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Edit the file on disk
 	filePath := filepath.Join(dir, "docs", "conflict.md")
@@ -193,7 +194,7 @@ func TestDocs_BothNoteAndFileChanged(t *testing.T) {
 	})
 
 	// Sync — both changed. Current behavior: file wins.
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 
 	// After sync, note should have file content (file wins)
 	state, _ := engine.Fold(note.ID)
@@ -214,7 +215,7 @@ func TestDocs_RapidEditsAllPersist(t *testing.T) {
 		Title: "Rapid",
 		Body:  "Start.",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	filePath := filepath.Join(dir, "docs", "rapid.md")
 
@@ -222,7 +223,7 @@ func TestDocs_RapidEditsAllPersist(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		data, _ := os.ReadFile(filePath)
 		os.WriteFile(filePath, []byte(string(data)+"\nEdit "+string(rune('A'+i))), 0644)
-		notes.SyncDocs(engine, dir, docsCfg)
+		docs.SyncDocs(engine, dir, docsCfg)
 	}
 
 	// All 10 should be in the note
@@ -238,7 +239,7 @@ func TestDocs_RapidEditsAllPersist(t *testing.T) {
 	os.RemoveAll(filepath.Join(dir, "docs"))
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, docsCfg)
+	docs.SyncDocs(engine2, dir, docsCfg)
 
 	restored, _ := os.ReadFile(filePath)
 	if !strings.Contains(string(restored), "Edit J") {
@@ -259,7 +260,7 @@ func TestDocs_ManyDocsAllSurviveRmRf(t *testing.T) {
 			Body:  "Content " + string(rune('A'+i)),
 		})
 	}
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Count files
 	files1, _ := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
@@ -271,7 +272,7 @@ func TestDocs_ManyDocsAllSurviveRmRf(t *testing.T) {
 	os.RemoveAll(filepath.Join(dir, "docs"))
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, docsCfg)
+	docs.SyncDocs(engine2, dir, docsCfg)
 
 	files2, _ := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
 	if len(files2) != 20 {
@@ -287,7 +288,7 @@ func TestDocs_IntentionalDelete_NotResurrected(t *testing.T) {
 	// Create 2 doc notes
 	engine.Create(notes.CreateOptions{Kind: "doc", Title: "Keep", Body: "Keeper."})
 	unwanted, _ := engine.Create(notes.CreateOptions{Kind: "doc", Title: "Unwanted", Body: "Delete me."})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Both files exist
 	keepFile := filepath.Join(dir, "docs", "keep.md")
@@ -301,12 +302,12 @@ func TestDocs_IntentionalDelete_NotResurrected(t *testing.T) {
 
 	// User deletes unwanted.md and adds tombstone
 	os.Remove(unwantedFile)
-	notes.AddTombstone(dir, unwanted.ID)
+	docs.AddTombstone(dir, unwanted.ID)
 
 	// Sync again — unwanted should NOT come back
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, docsCfg)
+	docs.SyncDocs(engine2, dir, docsCfg)
 
 	if _, err := os.Stat(unwantedFile); !os.IsNotExist(err) {
 		t.Error("tombstoned file should NOT be recreated by sync")
@@ -320,24 +321,24 @@ func TestDocs_TombstoneRemoval_Resurrects(t *testing.T) {
 	dir, engine := docEngine(t)
 
 	note, _ := engine.Create(notes.CreateOptions{Kind: "doc", Title: "Revived", Body: "Back from the dead."})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Tombstone it
 	filePath := filepath.Join(dir, "docs", "revived.md")
 	os.Remove(filePath)
-	notes.AddTombstone(dir, note.ID)
+	docs.AddTombstone(dir, note.ID)
 
 	// Verify tombstoned
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		t.Fatal("should be tombstoned")
 	}
 
 	// Remove tombstone
-	notes.RemoveTombstone(dir, note.ID)
+	docs.RemoveTombstone(dir, note.ID)
 
 	// Sync — should come back
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 	if _, err := os.Stat(filePath); err != nil {
 		t.Error("removing tombstone should allow file to be recreated")
 	}
@@ -354,7 +355,7 @@ func TestDocs_IgnoresNonMarkdownFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(docsDir, "data.json"), []byte(`{"key":"val"}`), 0644)
 	os.WriteFile(filepath.Join(docsDir, "real.md"), []byte("# Real\n\nMarkdown."), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 1 {
 		t.Errorf("should only import .md files, got %d", len(result.Imported))
 	}
@@ -373,7 +374,7 @@ func TestDocs_ExtraFrontmatterPreserved(t *testing.T) {
 	original := "---\ntitle: My Note\ntags: [a, b]\ndate: 2026-03-28\n---\n# Obsidian Note\n\nWith extra frontmatter.\n"
 	os.WriteFile(filepath.Join(docsDir, "obsidian.md"), []byte(original), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 1 {
 		t.Fatalf("should import, got %d", len(result.Imported))
 	}
@@ -409,10 +410,10 @@ func TestDocs_TagsAliasesCssclassesPreserved(t *testing.T) {
 	original := "---\ntags:\n  - project\n  - active\naliases:\n  - myalias\ncssclasses:\n  - fancy\n---\n# Tagged Note\n\nContent here.\n"
 	os.WriteFile(filepath.Join(docsDir, "tagged.md"), []byte(original), 0644)
 
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Do a second sync (simulates note update propagation).
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	data, _ := os.ReadFile(filepath.Join(docsDir, "tagged.md"))
 	content := string(data)
@@ -441,7 +442,7 @@ func TestDocs_UnknownFrontmatterFieldsSurvive(t *testing.T) {
 	original := "---\nmy-custom-field: hello\nanother_field: 42\n---\n# Unknown Fields\n\nOriginal content.\n"
 	os.WriteFile(filepath.Join(docsDir, "unknown.md"), []byte(original), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 1 {
 		t.Fatalf("should import, got %d", len(result.Imported))
 	}
@@ -457,7 +458,7 @@ func TestDocs_UnknownFrontmatterFieldsSurvive(t *testing.T) {
 		Field:    "body",
 		Body:     "# Unknown Fields\n\nUpdated content.\n",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	data, _ := os.ReadFile(filepath.Join(docsDir, "unknown.md"))
 	content := string(data)
@@ -482,7 +483,7 @@ func TestDocs_AddMaiIdToExistingFrontmatter(t *testing.T) {
 	original := "---\ntitle: Existing Note\ncreated: 2025-01-01\n---\n# Body\n\nContent.\n"
 	os.WriteFile(filepath.Join(docsDir, "existing.md"), []byte(original), 0644)
 
-	result, _ := notes.SyncDocs(engine, dir, docsCfg)
+	result, _ := docs.SyncDocs(engine, dir, docsCfg)
 	if len(result.Imported) != 1 {
 		t.Fatalf("should import, got %d", len(result.Imported))
 	}
@@ -541,7 +542,7 @@ func TestDocsSync_StrippedFrontmatterAdoptsExistingDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := notes.SyncDocs(engine, dir, docsCfg); err != nil {
+	if _, err := docs.SyncDocs(engine, dir, docsCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -551,7 +552,7 @@ func TestDocsSync_StrippedFrontmatterAdoptsExistingDoc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	result, err := docs.SyncDocs(engine, dir, docsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,6 +596,9 @@ func TestDocsSync_DuplicateTargetsReportConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Materialize first doc to disk before creating the conflict
+	docs.SyncDocs(engine, dir, docsCfg)
+
 	second := &notes.Note{
 		ID:        "doc-conflict-2",
 		Kind:      "doc",
@@ -622,7 +626,7 @@ func TestDocsSync_DuplicateTargetsReportConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := notes.SyncDocs(engine, dir, docsCfg)
+	result, err := docs.SyncDocs(engine, dir, docsCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +661,7 @@ func TestDocs_RepeatedSyncs_NoDuplication(t *testing.T) {
 		Title: "NoDup",
 		Body:  "if one day we can merge safely, we need the right base.",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	filePath := filepath.Join(dir, "docs", "nodup.md")
 
@@ -674,14 +678,14 @@ func TestDocs_RepeatedSyncs_NoDuplication(t *testing.T) {
 	for i, content := range edits {
 		// Full-file rewrite (what Obsidian does)
 		data, _ := os.ReadFile(filePath)
-		_, body := notes.ParseMaiFrontmatterExported(string(data))
+		_, body := docs.ParseFrontmatter(string(data))
 		_ = body
 		// Reconstruct file with frontmatter + new body
-		id, _ := notes.ParseMaiFrontmatterExported(string(data))
+		id, _ := docs.ParseFrontmatter(string(data))
 		fm := "---\nmai-id: " + id + "\n---\n"
 		os.WriteFile(filePath, []byte(fm+content+"\n"), 0644)
 
-		result, err := notes.SyncDocs(engine, dir, docsCfg)
+		result, err := docs.SyncDocs(engine, dir, docsCfg)
 		if err != nil {
 			t.Fatalf("round %d: sync error: %v", i+1, err)
 		}
@@ -714,7 +718,7 @@ func TestDocs_ConcurrentNoteAndFileEdits_NoDuplication(t *testing.T) {
 		Title: "Concurrent",
 		Body:  "Base content.\n",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	filePath := filepath.Join(dir, "docs", "concurrent.md")
 
@@ -731,13 +735,13 @@ func TestDocs_ConcurrentNoteAndFileEdits_NoDuplication(t *testing.T) {
 
 		// User edits file (adds a different line)
 		data, _ := os.ReadFile(filePath)
-		id, body := notes.ParseMaiFrontmatterExported(string(data))
+		id, body := docs.ParseFrontmatter(string(data))
 		userBody := body + "User line " + string(rune('1'+i)) + ".\n"
 		fm := "---\nmai-id: " + id + "\n---\n"
 		os.WriteFile(filePath, []byte(fm+userBody+"\n"), 0644)
 
 		// Sync
-		_, err := notes.SyncDocs(engine, dir, docsCfg)
+		_, err := docs.SyncDocs(engine, dir, docsCfg)
 		if err != nil {
 			t.Fatalf("round %d: %v", i+1, err)
 		}
@@ -782,20 +786,20 @@ func TestDocs_LargeDocument_StableSize(t *testing.T) {
 		Title: "LargeDoc",
 		Body:  originalBody,
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	filePath := filepath.Join(dir, "docs", "largedoc.md")
 
 	// 5 rounds of small edits on a large document
 	for i := 0; i < 5; i++ {
 		data, _ := os.ReadFile(filePath)
-		id, currentBody := notes.ParseMaiFrontmatterExported(string(data))
+		id, currentBody := docs.ParseFrontmatter(string(data))
 		// Append one line
 		editedBody := currentBody + "Edit round " + string(rune('A'+i)) + ".\n"
 		fm := "---\nmai-id: " + id + "\n---\n"
 		os.WriteFile(filePath, []byte(fm+editedBody+"\n"), 0644)
 
-		notes.SyncDocs(engine, dir, docsCfg)
+		docs.SyncDocs(engine, dir, docsCfg)
 	}
 
 	state, _ := engine.Fold(note.ID)
@@ -821,13 +825,13 @@ func TestDocs_FileOnlyEdit_NoFileRewrite(t *testing.T) {
 		Title: "NoRewrite",
 		Body:  "Original content.",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	filePath := filepath.Join(dir, "docs", "norewrite.md")
 
 	// User edits the file in Obsidian (full file rewrite)
 	data, _ := os.ReadFile(filePath)
-	id, _ := notes.ParseMaiFrontmatterExported(string(data))
+	id, _ := docs.ParseFrontmatter(string(data))
 	newBody := "Original content.\nUser added this line."
 	fm := "---\nmai-id: " + id + "\n---\n"
 	os.WriteFile(filePath, []byte(fm+newBody+"\n"), 0644)
@@ -840,7 +844,7 @@ func TestDocs_FileOnlyEdit_NoFileRewrite(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Sync — should update note but NOT rewrite the file
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Verify the note was updated
 	state, _ := engine.Fold(note.ID)
@@ -873,7 +877,7 @@ func TestDocs_NoteOnlyEdit_WritesFile(t *testing.T) {
 		Title: "NoteOnly",
 		Body:  "Original content.",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Agent edits the note (not the file)
 	engine.Append(notes.AppendOptions{
@@ -884,7 +888,7 @@ func TestDocs_NoteOnlyEdit_WritesFile(t *testing.T) {
 	})
 
 	// Sync — should update the file
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	// Verify the file was updated
 	filePath := filepath.Join(dir, "docs", "noteonly.md")
@@ -904,7 +908,7 @@ func TestDocs_BodyContainsDashDashDash(t *testing.T) {
 		Title: "Tricky",
 		Body:  "# Tricky\n\nSome YAML example:\n\n---\nkey: value\n---\n\nEnd.",
 	})
-	notes.SyncDocs(engine, dir, docsCfg)
+	docs.SyncDocs(engine, dir, docsCfg)
 
 	files, _ := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
 	if len(files) == 0 {
@@ -913,7 +917,7 @@ func TestDocs_BodyContainsDashDashDash(t *testing.T) {
 
 	// Read it back — the --- in the body shouldn't confuse the parser
 	data, _ := os.ReadFile(files[0])
-	noteID, body := notes.ParseMaiFrontmatterExported(string(data))
+	noteID, body := docs.ParseFrontmatter(string(data))
 	if noteID == "" {
 		t.Error("should parse mai-id from frontmatter")
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cygnusfear/maitake/pkg/git"
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
@@ -26,7 +27,7 @@ func TestDocsSync_NoteToFile(t *testing.T) {
 	}
 
 	// Sync to ensure file exists (may be no-op if auto-sync already wrote it)
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// File should exist with frontmatter
 	files, _ := filepath.Glob(filepath.Join(dir, "docs", "*.md"))
@@ -57,7 +58,7 @@ func TestDocsSync_FileToNote(t *testing.T) {
 	os.WriteFile(filepath.Join(docsDir, "guide.md"), []byte("# Guide\n\nHow to use."), 0644)
 
 	// Sync — should import
-	result, err := notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	result, err := docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +93,7 @@ func TestDocsSync_FileEditUpdatesNote(t *testing.T) {
 		Title: "Test",
 		Body:  "Original content.",
 	})
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// Edit the file on disk
 	filePath := filepath.Join(dir, "docs", "test.md")
@@ -101,7 +102,7 @@ func TestDocsSync_FileEditUpdatesNote(t *testing.T) {
 	os.WriteFile(filePath, []byte(newContent), 0644)
 
 	// Sync — should update the note
-	result, err := notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	result, err := docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +134,7 @@ func TestDocsSync_FileEditSurvivesRestart(t *testing.T) {
 		Title: "Persist",
 		Body:  "Before edit.",
 	})
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// Edit file
 	filePath := filepath.Join(dir, "docs", "persist.md")
@@ -141,7 +142,7 @@ func TestDocsSync_FileEditSurvivesRestart(t *testing.T) {
 	os.WriteFile(filePath, []byte(strings.Replace(string(data), "Before edit.", "After edit.", 1)), 0644)
 
 	// Sync
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// NEW ENGINE — simulates restarting mai
 	repo2, _ := git.NewGitRepo(dir)
@@ -168,7 +169,7 @@ func TestDocsSync_CloseMarksFrontmatter(t *testing.T) {
 		Title: "Temporary",
 		Body:  "Will be marked closed.",
 	})
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	filePath := filepath.Join(dir, "docs", "temporary.md")
 	if _, err := os.Stat(filePath); err != nil {
@@ -184,7 +185,7 @@ func TestDocsSync_CloseMarksFrontmatter(t *testing.T) {
 	})
 
 	// Sync to ensure closed marking.
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// File must still exist — we mark it, not delete it.
 	data, err := os.ReadFile(filePath)
@@ -210,10 +211,10 @@ func TestDocsSync_AlreadyInSync(t *testing.T) {
 		Title: "Stable",
 		Body:  "No changes.",
 	})
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// Second sync — nothing should change
-	result, _ := notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	result, _ := docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 	total := len(result.Written) + len(result.Imported) + len(result.Updated) + len(result.Removed)
 	if total != 0 {
 		t.Errorf("second sync should be no-op, got %d changes", total)
@@ -230,13 +231,13 @@ func TestDocsSync_DeleteAndRestore(t *testing.T) {
 		Title: "Resilient",
 		Body:  "Survives rm -rf.",
 	})
-	notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 
 	// rm -rf docs/
 	os.RemoveAll(filepath.Join(dir, "docs"))
 
 	// Sync — should restore
-	result, _ := notes.SyncDocs(engine, dir, notes.DocsConfig{Dir: "docs"})
+	result, _ := docs.SyncDocs(engine, dir, docs.Config{Dir: "docs"})
 	if len(result.Written) != 1 {
 		t.Fatalf("Written = %d, want 1 (restored)", len(result.Written))
 	}

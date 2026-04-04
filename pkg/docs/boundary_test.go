@@ -10,7 +10,7 @@ import (
 // pkg/notes is the substrate. It must not import pkg/crdt (domain logic).
 // If this test fails, doc-specific code is leaking into the substrate.
 func TestBoundary_NotesDoesNotImportCRDT(t *testing.T) {
-	out, err := exec.Command("go", "list", "-f", "{{join .Imports \"\\n\"}}", "./pkg/notes/").
+	out, err := exec.Command("go", "list", "-f", "{{join .Imports \"\\n\"}}", "github.com/cygnusfear/maitake/pkg/notes").
 		CombinedOutput()
 	if err != nil {
 		t.Skipf("go list failed: %v\n%s", err, out)

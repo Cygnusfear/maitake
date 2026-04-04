@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/notes"
 	"github.com/fsnotify/fsnotify"
@@ -203,7 +204,7 @@ func handleFileDelete(w watchedRepo, filePath string) {
 			}
 		}
 		// Also check derived path
-		targetPath := notes.DocTargetPathExported(&state, w.cfg.Docs.Dir)
+		targetPath := docs.DocTargetPath(&state, w.cfg.Docs.Dir)
 		if targetPath == rel {
 			matched = true
 		}
@@ -215,7 +216,7 @@ func handleFileDelete(w watchedRepo, filePath string) {
 		}
 	}
 	if len(openMatches) == 1 {
-		notes.AddTombstone(w.path, openMatches[0].ID)
+		docs.AddTombstone(w.path, openMatches[0].ID)
 		fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, openMatches[0].ID, filepath.Base(w.path))
 		return
 	}
@@ -225,7 +226,7 @@ func handleFileDelete(w watchedRepo, filePath string) {
 		}
 		return
 	}
-	notes.AddTombstone(w.path, matches[0].ID)
+	docs.AddTombstone(w.path, matches[0].ID)
 	fmt.Printf("  ✗ %s (tombstoned %s) [%s]\n", rel, matches[0].ID, filepath.Base(w.path))
 }
 
@@ -258,7 +259,10 @@ func syncFile(w watchedRepo, filePath string) {
 		return
 	}
 
-	result, err := notes.SyncDocs(engine, w.path, w.cfg.Docs)
+	result, err := docs.SyncDocs(engine, w.path, docs.Config{
+		Dir:  w.cfg.Docs.Dir,
+		Sync: w.cfg.Docs.Sync,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  error: sync: %v\n", err)
 		return

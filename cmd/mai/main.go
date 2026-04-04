@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
@@ -163,6 +164,9 @@ func withEngine(fn func(notes.Engine)) {
 		fatal("initializing engine: %v", err)
 	}
 
+	// Register doc auto-sync hooks (CRDT + disk materialization)
+	docs.RegisterAutoSync(engine)
+
 	// Register this repo for daemon discovery
 	registerRepo(repo.GetPath())
 
@@ -189,6 +193,7 @@ func withEngineAndRepo(fn func(notes.Engine, git.Repo)) {
 	if err != nil {
 		fatal("initializing engine: %v", err)
 	}
+	docs.RegisterAutoSync(engine)
 	registerRepo(repo.GetPath())
 	ensureDaemon()
 	fn(engine, repo)

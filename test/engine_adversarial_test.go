@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
@@ -756,6 +757,7 @@ func TestEngineAdversarial(t *testing.T) {
 
 	t.Run("crdt and ydoc wiring", func(t *testing.T) {
 		_, engine := setupEngine(t)
+		docs.RegisterAutoSync(engine)
 		note, err := engine.Create(notes.CreateOptions{Kind: "doc", Title: "CRDT note", Body: "body v1"})
 		if err != nil {
 			t.Fatalf("Create doc: %v", err)

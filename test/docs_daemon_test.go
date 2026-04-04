@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
+	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/notes"
 )
 
@@ -27,13 +28,13 @@ func TestDocsSync_EditThenDeleteThenRestore(t *testing.T) {
 	engine, _ := notes.NewEngine(repo)
 
 	// Create doc and materialize
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 	note, _ := engine.Create(notes.CreateOptions{
 		Kind:  "doc",
 		Title: "Editable",
 		Body:  "# Editable\n\nOriginal content.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	// 1. Edit the file (simulate Obsidian save)
 	filePath := filepath.Join(dir, "docs", "editable.md")
@@ -42,7 +43,7 @@ func TestDocsSync_EditThenDeleteThenRestore(t *testing.T) {
 	os.WriteFile(filePath, []byte(edited), 0644)
 
 	// Daemon would catch this. Simulate: sync to push edit into note.
-	result1, err := notes.SyncDocs(engine, dir, cfg)
+	result1, err := docs.SyncDocs(engine, dir, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestDocsSync_EditThenDeleteThenRestore(t *testing.T) {
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
 
-	result2, err := notes.SyncDocs(engine2, dir, cfg)
+	result2, err := docs.SyncDocs(engine2, dir, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,13 +95,13 @@ func TestDocsSync_DaemonCatchesEdit(t *testing.T) {
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
 
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 	note, _ := engine.Create(notes.CreateOptions{
 		Kind:  "doc",
 		Title: "Watched",
 		Body:  "Before daemon edit.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	// Edit file
 	filePath := filepath.Join(dir, "docs", "watched.md")
@@ -108,7 +109,7 @@ func TestDocsSync_DaemonCatchesEdit(t *testing.T) {
 	os.WriteFile(filePath, []byte(strings.Replace(string(data), "Before daemon edit.", "After daemon edit.", 1)), 0644)
 
 	// Simulate daemon: sync catches the edit
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	// Kill and restart engine (simulates rm -rf + new mai process)
 	repo2, _ := git.NewGitRepo(dir)
@@ -128,13 +129,13 @@ func TestDocsSync_EditWithoutSync_LosesData(t *testing.T) {
 	repo, _ := git.NewGitRepo(dir)
 	engine, _ := notes.NewEngine(repo)
 
-	cfg := notes.DocsConfig{Dir: "docs"}
+	cfg := docs.Config{Dir: "docs"}
 	note, _ := engine.Create(notes.CreateOptions{
 		Kind:  "doc",
 		Title: "Volatile",
 		Body:  "Original only.",
 	})
-	notes.SyncDocs(engine, dir, cfg)
+	docs.SyncDocs(engine, dir, cfg)
 
 	// Edit file but DON'T sync
 	filePath := filepath.Join(dir, "docs", "volatile.md")
@@ -147,7 +148,7 @@ func TestDocsSync_EditWithoutSync_LosesData(t *testing.T) {
 	// Restore
 	repo2, _ := git.NewGitRepo(dir)
 	engine2, _ := notes.NewEngine(repo2)
-	notes.SyncDocs(engine2, dir, cfg)
+	docs.SyncDocs(engine2, dir, cfg)
 
 	// Edit is lost — this is expected behavior without daemon
 	restored, _ := os.ReadFile(filePath)
