@@ -1,0 +1,8 @@
+{
+  "name": "maitake",
+  "pi": {
+    "skills": [
+      "./skills/"
+    ]
+  }
+}
