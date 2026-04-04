@@ -54,19 +54,30 @@ func main() {
 	case "migrate":
 		withEngine(func(e notes.Engine) { runMigrate(e, args) })
 	case "docs":
-		if len(args) > 0 && args[0] == "sync" {
-			withEngine(func(e notes.Engine) { runDocsSync(e, args[1:]) })
-		} else {
-			fatal("usage: mai docs sync [--dir PATH]")
+		if !dispatchPlugin("docs", args) {
+			// Built-in fallback
+			if len(args) > 0 && args[0] == "sync" {
+				withEngine(func(e notes.Engine) { runDocsSync(e, args[1:]) })
+			} else {
+				fatal("usage: mai docs sync [--dir PATH]")
+			}
 		}
 	case "daemon":
-		runDaemon(args)
+		if !dispatchPlugin("docs", append([]string{"daemon"}, args...)) {
+			runDaemon(args)
+		}
 	case "check":
-		withEngine(func(e notes.Engine) { runCheck(e, args) })
+		if !dispatchPlugin("docs", append([]string{"check"}, args...)) {
+			withEngine(func(e notes.Engine) { runCheck(e, args) })
+		}
 	case "refs":
-		withEngine(func(e notes.Engine) { runRefs(e, args) })
+		if !dispatchPlugin("docs", append([]string{"refs"}, args...)) {
+			withEngine(func(e notes.Engine) { runRefs(e, args) })
+		}
 	case "expand":
-		withEngine(func(e notes.Engine) { runExpand(e, args) })
+		if !dispatchPlugin("docs", append([]string{"expand"}, args...)) {
+			withEngine(func(e notes.Engine) { runExpand(e, args) })
+		}
 	case "create":
 		withEngine(func(e notes.Engine) { runCreate(e, args) })
 	case "show":
