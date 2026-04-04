@@ -11,3 +11,5 @@
 {"kind":"event","field":"links","value":"+mai-bd6i","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-bwzg"}}],"timestamp":"2026-04-04T13:13:49Z","branch":"main"}
 
 {"kind":"event","field":"links","value":"+mai-dydw","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-bwzg"}}],"timestamp":"2026-04-04T13:13:49Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-bwzg"}}],"body":"All 5 subtasks complete. pkg/docs extracted, mai-pr/mai-docs/mai-changelog as separate binaries, plugin manifest discovery, CI boundary check.","timestamp":"2026-04-04T13:45:16Z","branch":"main"}
