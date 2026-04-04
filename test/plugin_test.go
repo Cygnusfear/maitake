@@ -48,8 +48,10 @@ test = "mai-test"
 	if !strings.Contains(content, "CALLED:hello world") {
 		t.Errorf("plugin should receive args: %s", content)
 	}
-	if !strings.Contains(content, "REPO:"+dir) {
-		t.Errorf("plugin should receive MAI_REPO_PATH: %s", content)
+	// macOS resolves /var → /private/var; accept either
+	resolvedDir, _ := filepath.EvalSymlinks(dir)
+	if !strings.Contains(content, "REPO:"+dir) && !strings.Contains(content, "REPO:"+resolvedDir) {
+		t.Errorf("plugin should receive MAI_REPO_PATH: %s\nwant %s or %s", content, dir, resolvedDir)
 	}
 }
 

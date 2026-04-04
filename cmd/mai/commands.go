@@ -44,6 +44,12 @@ func runInit(args []string) {
 	}
 	fmt.Println("Initialized .maitake/hooks/")
 
+	// Write default plugins.toml (won't overwrite existing)
+	if err := notes.WriteDefaultPlugins(maitakeDir); err != nil {
+		fatal("init plugins: %v", err)
+	}
+	fmt.Println("Initialized .maitake/plugins.toml")
+
 	// Write config
 	cfg := notes.ReadConfig(maitakeDir)
 	if remote != "" {

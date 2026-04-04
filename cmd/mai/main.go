@@ -137,6 +137,10 @@ func main() {
 	case "help", "--help", "-h":
 		printUsage()
 	default:
+		// Plugin dispatch: check .maitake/plugins.toml → exec binary
+		if dispatchPlugin(cmd, args) {
+			return
+		}
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		printUsage()
 		os.Exit(1)
