@@ -232,6 +232,55 @@ func runShow(e notes.Engine, args []string) {
 	printState(state)
 }
 
+func runSearch(e notes.Engine, args []string) {
+	f, positional := parseFlags(args)
+
+	if len(positional) == 0 {
+		fatal("usage: mai search <query> [-k kind] [--status status] [--limit N]")
+	}
+
+	query := strings.Join(positional, " ")
+
+	limit := f.limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	opts := notes.SearchOptions{
+		FindOptions: notes.FindOptions{
+			Kind:   f.kind,
+			Status: f.status,
+		},
+		Limit: limit,
+	}
+	if len(f.tags) > 0 {
+		opts.FindOptions.Tag = f.tags[0]
+	}
+
+	results, err := e.Search(query, opts)
+	if err != nil {
+		fatal("search: %v", err)
+	}
+
+	if globalJSON {
+		printJSON(results)
+		return
+	}
+
+	if len(results) == 0 {
+		fmt.Println("No matches.")
+		return
+	}
+
+	for _, r := range results {
+		tags := ""
+		if len(r.State.Tags) > 0 {
+			tags = " [" + strings.Join(r.State.Tags, ",") + "]"
+		}
+		fmt.Printf("%-8s [%5.2f] (%s) %s%s\n", r.ID, r.Score, r.State.Status, r.State.Title, tags)
+	}
+}
+
 func runList(e notes.Engine, args []string) {
 	if e == nil {
 		withEngine(func(eng notes.Engine) { runList(eng, args) })

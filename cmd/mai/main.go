@@ -55,33 +55,30 @@ func main() {
 		withEngine(func(e notes.Engine) { runMigrate(e, args) })
 	case "docs":
 		if !dispatchPlugin("docs", args) {
-			// Built-in fallback
-			if len(args) > 0 && args[0] == "sync" {
-				withEngine(func(e notes.Engine) { runDocsSync(e, args[1:]) })
-			} else {
-				fatal("usage: mai docs sync [--dir PATH]")
-			}
+			fatal("mai-docs not found. Install: go install github.com/cygnusfear/maitake/cmd/mai-docs@latest")
 		}
 	case "daemon":
 		if !dispatchPlugin("docs", append([]string{"daemon"}, args...)) {
-			runDaemon(args)
+			fatal("mai-docs not found. Install: go install github.com/cygnusfear/maitake/cmd/mai-docs@latest")
 		}
 	case "check":
 		if !dispatchPlugin("docs", append([]string{"check"}, args...)) {
-			withEngine(func(e notes.Engine) { runCheck(e, args) })
+			fatal("mai-docs not found. Install: go install github.com/cygnusfear/maitake/cmd/mai-docs@latest")
 		}
 	case "refs":
 		if !dispatchPlugin("docs", append([]string{"refs"}, args...)) {
-			withEngine(func(e notes.Engine) { runRefs(e, args) })
+			fatal("mai-docs not found. Install: go install github.com/cygnusfear/maitake/cmd/mai-docs@latest")
 		}
 	case "expand":
 		if !dispatchPlugin("docs", append([]string{"expand"}, args...)) {
-			withEngine(func(e notes.Engine) { runExpand(e, args) })
+			fatal("mai-docs not found. Install: go install github.com/cygnusfear/maitake/cmd/mai-docs@latest")
 		}
 	case "create":
 		withEngine(func(e notes.Engine) { runCreate(e, args) })
 	case "show":
 		withEngine(func(e notes.Engine) { runShow(e, args) })
+	case "search":
+		withEngine(func(e notes.Engine) { runSearch(e, args) })
 	case "ls", "list":
 		withEngine(func(e notes.Engine) { runList(e, args) })
 	case "start":
@@ -144,9 +141,8 @@ func main() {
 			withEngine(func(e notes.Engine) { runShortcut(e, "decision", "", args) })
 		}
 	case "pr":
-		// Dispatch to mai-pr plugin if available, fall back to built-in
 		if !dispatchPlugin("pr", args) {
-			dispatchPR(args)
+			fatal("mai-pr not found. Install: go install github.com/cygnusfear/maitake/cmd/mai-pr@latest")
 		}
 	case "help", "--help", "-h":
 		printUsage()
@@ -194,59 +190,7 @@ func withEngine(fn func(notes.Engine)) {
 	fn(engine)
 }
 
-func withEngineAndRepo(fn func(notes.Engine, git.Repo)) {
-	dir := globalDir
-	if dir == "" {
-		var err error
-		dir, err = os.Getwd()
-		if err != nil {
-			fatal("getting working directory: %v", err)
-		}
-	}
-	repo, err := git.NewGitRepo(dir)
-	if err != nil {
-		fatal("not a git repository (or any parent)")
-	}
-	engine, err := notes.NewEngine(repo)
-	if err != nil {
-		fatal("initializing engine: %v", err)
-	}
-	docs.RegisterAutoSync(engine)
-	registerRepo(repo.GetPath())
-	ensureDaemon()
-	fn(engine, repo)
-}
-
-// dispatchPR routes `mai pr <subcommand>` to the appropriate handler.
-// Subcommands: show, accept, reject, submit, diff, comment.
-// No subcommand = list. Anything else = create.
-func dispatchPR(args []string) {
-	if len(args) == 0 {
-		withEngine(func(e notes.Engine) { runPRList(e) })
-		return
-	}
-
-	sub := args[0]
-	rest := args[1:]
-
-	switch sub {
-	case "show":
-		withEngineAndRepo(func(e notes.Engine, r git.Repo) { runPRShow(e, r, rest) })
-	case "accept":
-		withEngine(func(e notes.Engine) { runPRAccept(e, rest) })
-	case "reject":
-		withEngine(func(e notes.Engine) { runPRReject(e, rest) })
-	case "submit":
-		withEngineAndRepo(func(e notes.Engine, r git.Repo) { runPRSubmit(e, r, rest) })
-	case "diff":
-		withEngineAndRepo(func(e notes.Engine, r git.Repo) { runPRDiff(e, r, rest) })
-	case "comment":
-		withEngine(func(e notes.Engine) { runPRComment(e, rest) })
-	default:
-		// Not a subcommand — treat as pr create (title text)
-		withEngine(func(e notes.Engine) { runPRCreate(e, args) })
-	}
-}
+// dispatchPR and withEngineAndRepo removed — PR logic lives in cmd/mai-pr/
 
 func ensureDaemon() {
 	home, err := os.UserHomeDir()
@@ -410,6 +354,7 @@ Lifecycle:
 Query:
   show <id>                  Full note state
   ls [--status=X] [-k kind]  List notes (default: open + in_progress)
+  search <query> [flags]     BM25 full-text search across all notes
   closed [-k kind]           Recently closed notes
   context <path>             Everything about a file
   ready                      Open notes with deps resolved
@@ -456,6 +401,7 @@ type flagSet struct {
 	status   string
 	message  string
 	help     bool
+	limit    int
 }
 
 func parseFlags(args []string) (flagSet, []string) {
@@ -466,6 +412,8 @@ func parseFlags(args []string) (flagSet, []string) {
 		switch args[i] {
 		case "-h", "--help":
 			f.help = true
+		case "--limit":
+			i++; if i < len(args) { fmt.Sscanf(args[i], "%d", &f.limit) }
 		case "-k", "--kind":
 			i++; if i < len(args) { f.kind = args[i] }
 		case "-t", "--title":

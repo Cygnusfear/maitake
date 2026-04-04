@@ -27,6 +27,9 @@ type Index struct {
 	ByStatus map[string][]string // status → note IDs
 	ByTag    map[string][]string // tag → note IDs
 
+	// Full-text search index
+	Text *TextIndex
+
 	// Build timestamp
 	BuiltAt time.Time
 }
@@ -93,6 +96,10 @@ func (idx *Index) Build() {
 			idx.ByTag[tag] = append(idx.ByTag[tag], id)
 		}
 	}
+
+	// Build full-text search index
+	idx.Text = &TextIndex{}
+	idx.Text.build(idx.States)
 
 	idx.BuiltAt = time.Now()
 }

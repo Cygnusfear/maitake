@@ -419,6 +419,14 @@ func (e *RealEngine) List(opts ListOptions) ([]StateSummary, error) {
 	return e.index.QueryList(opts), nil
 }
 
+// Search performs BM25 full-text search across all notes.
+func (e *RealEngine) Search(query string, opts SearchOptions) ([]SearchResult, error) {
+	if e.index.Text == nil {
+		return nil, nil
+	}
+	return e.index.Text.SearchFiltered(query, opts), nil
+}
+
 // Refs returns all notes with edges pointing at a target (reverse lookup).
 func (e *RealEngine) Refs(target string) ([]State, error) {
 	// Search all states for edges targeting this

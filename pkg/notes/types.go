@@ -212,6 +212,7 @@ type Engine interface {
 	Find(opts FindOptions) ([]State, error)
 	List(opts ListOptions) ([]StateSummary, error)
 	Refs(target string) ([]State, error)
+	Search(query string, opts SearchOptions) ([]SearchResult, error)
 	Kinds() ([]KindCount, error)
 	BranchUse(name string) error
 	BranchMerge(name string) error

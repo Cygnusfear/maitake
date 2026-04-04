@@ -16,6 +16,9 @@ func (m *mockExpandEngine) Get(id string) (*Note, error)                 { retur
 func (m *mockExpandEngine) Context(path string) ([]State, error)         { return nil, nil }
 func (m *mockExpandEngine) ContextAll(path string) ([]State, error)      { return nil, nil }
 func (m *mockExpandEngine) Refs(target string) ([]State, error)          { return nil, nil }
+func (m *mockExpandEngine) Search(query string, opts SearchOptions) ([]SearchResult, error) {
+	return nil, nil
+}
 func (m *mockExpandEngine) List(opts ListOptions) ([]StateSummary, error) { return nil, nil }
 func (m *mockExpandEngine) Kinds() ([]KindCount, error)                  { return nil, nil }
 func (m *mockExpandEngine) BranchUse(name string) error                  { return nil }
