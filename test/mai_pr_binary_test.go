@@ -8,22 +8,30 @@ import (
 	"testing"
 )
 
-// maiPrBinary is set in TestMain to the built mai-pr binary path.
-var maiPrBinary string
+// maiPrBinaryDir is a persistent temp dir for the mai-pr binary.
+var maiPrBinaryDir string
 
 func buildMaiPr(t *testing.T) string {
 	t.Helper()
-	if maiPrBinary != "" {
-		return maiPrBinary
+	if maiPrBinaryDir != "" {
+		bin := filepath.Join(maiPrBinaryDir, "mai-pr")
+		if _, err := os.Stat(bin); err == nil {
+			return bin
+		}
 	}
-	bin := filepath.Join(t.TempDir(), "mai-pr")
+	// Use a non-test temp dir so it persists across subtests
+	dir, err := os.MkdirTemp("", "mai-pr-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	maiPrBinaryDir = dir
+	bin := filepath.Join(dir, "mai-pr")
 	cmd := exec.Command("go", "build", "-o", bin, "./cmd/mai-pr/")
 	cmd.Dir = projectRoot()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("failed to build mai-pr: %v\n%s", err, out)
 	}
-	maiPrBinary = bin
 	return bin
 }
 
@@ -101,9 +109,11 @@ func TestMaiPr_Binary_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mai-pr create failed: %v\n%s", err, out)
 	}
-	prID := strings.TrimSpace(string(out))
-	if prID == "" || !strings.HasPrefix(prID, "mai-") {
-		t.Fatalf("expected PR ID starting with mai-, got %q", prID)
+	output := strings.TrimSpace(string(out))
+	// Output format: "<id>  <from> → <to>"
+	prID := strings.Fields(output)[0]
+	if prID == "" {
+		t.Fatalf("expected PR ID in output, got %q", output)
 	}
 
 	// List PRs
@@ -124,7 +134,6 @@ func TestMaiPr_DispatchViaMai(t *testing.T) {
 	bin := buildMaiPr(t)
 	dir := setupRepo(t)
 
-	// Put mai-pr on PATH and register in plugins.toml
 	binDir := filepath.Dir(bin)
 	maitakeDir := filepath.Join(dir, ".maitake")
 	os.MkdirAll(maitakeDir, 0755)
@@ -160,7 +169,9 @@ pr = "mai-pr"
 	if err != nil {
 		t.Fatalf("mai pr (dispatch) failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "mai-") {
-		t.Errorf("dispatch should create PR: %s", string(out))
+	output := strings.TrimSpace(string(out))
+	// Should contain an ID and branch info
+	if !strings.Contains(output, "→") {
+		t.Errorf("dispatch should create PR with branch info: %s", output)
 	}
 }

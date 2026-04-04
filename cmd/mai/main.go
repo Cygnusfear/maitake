@@ -133,7 +133,10 @@ func main() {
 			withEngine(func(e notes.Engine) { runShortcut(e, "decision", "", args) })
 		}
 	case "pr":
-		dispatchPR(args)
+		// Dispatch to mai-pr plugin if available, fall back to built-in
+		if !dispatchPlugin("pr", args) {
+			dispatchPR(args)
+		}
 	case "help", "--help", "-h":
 		printUsage()
 	default:
