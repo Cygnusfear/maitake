@@ -5,3 +5,5 @@
 {"kind":"event","field":"links","value":"+mai-bwzg","edges":[{"type":"updates","target":{"kind":"note","ref":"mai-pa86"}}],"timestamp":"2026-04-04T13:13:48Z","branch":"main"}
 
 {"kind":"event","field":"status","value":"in_progress","edges":[{"type":"starts","target":{"kind":"note","ref":"mai-pa86"}}],"timestamp":"2026-04-04T13:31:05Z","branch":"main"}
+
+{"kind":"event","field":"status","value":"closed","edges":[{"type":"closes","target":{"kind":"note","ref":"mai-pa86"}}],"body":"Implemented in 7533129. cmd/mai-pr/ is a standalone binary. internal/cli/ provides shared helpers. mai pr dispatches via plugin manifest with built-in fallback.","timestamp":"2026-04-04T13:37:45Z","branch":"main"}
