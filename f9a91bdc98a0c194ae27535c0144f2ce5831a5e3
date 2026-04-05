@@ -1,0 +1,25 @@
+cmd/mai-docs/main.go
+  5b6bc8b69a0c05d4 73,83,125,136-137,167
+cmd/mai/main.go
+  5b6bc8b69a0c05d4 371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "f9a91bdc98a0c194ae27535c0144f2ce5831a5e3",
+  "prompts": {
+    "5b6bc8b69a0c05d4": {
+      "agent_id": {
+        "tool": "Annie Mercury Zaldarriaga",
+        "id": "d582edd1-a854-46e0-a63b-8037765e4c8c",
+        "model": "anthropic/claude-opus-4-6"
+      },
+      "human_author": "Alexander Mangel",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 3,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
