@@ -368,7 +368,7 @@ Setup:
   migrate [--dir PATH] [--dry-run]  Import tk .tickets/*.md into maitake
 
 Docs:
-  docs sync [--dir PATH]         Bidirectional sync: doc notes ↔ markdown files
+  docs sync [--dir PATH] [-y]    Bidirectional sync: doc notes ↔ markdown files
   daemon                         Watch all repos, sync file changes to notes
 
 Knowledge graph:

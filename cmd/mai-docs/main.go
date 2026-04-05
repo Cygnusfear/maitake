@@ -70,7 +70,7 @@ func printHelp() {
 
 Usage: mai-docs <subcommand> [args]
 
-  mai-docs sync [--dir D] [--dry-run]   Sync doc notes ↔ markdown files
+  mai-docs sync [--dir D] [--dry-run] [-y]  Sync doc notes ↔ markdown files
   mai-docs check                        Validate code refs and wiki links
   mai-docs refs <id>                    Find references to a note
   mai-docs expand <text>                Expand [[wiki refs]] in text
@@ -80,6 +80,7 @@ Flags:
   --json       JSON output
   --dir <dir>  Docs directory (default: from config or .mai-docs)
   --dry-run    Preview without writing
+  -y, --yes    Skip confirmation prompts
 `)
 }
 
@@ -121,6 +122,7 @@ func runSync(e notes.Engine, args []string) {
 	dir := repoPath()
 	cfg := docs.Config{}
 	dryRun := false
+	assumeYes := false
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -131,6 +133,8 @@ func runSync(e notes.Engine, args []string) {
 			}
 		case "--dry-run", "-n":
 			dryRun = true
+		case "--yes", "-y":
+			assumeYes = true
 		}
 	}
 
@@ -160,7 +164,7 @@ func runSync(e notes.Engine, args []string) {
 		return
 	}
 
-	if total > 10 {
+	if total > 10 && !assumeYes {
 		fmt.Printf("\n%d files will be affected. Continue? [y/N] ", total)
 		var answer string
 		fmt.Scanln(&answer)
