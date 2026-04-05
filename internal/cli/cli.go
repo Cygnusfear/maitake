@@ -8,6 +8,32 @@ import (
 	"strings"
 )
 
+// assumeYes is set when -y/--yes was parsed by a binary, or propagated via MAI_YES=1.
+var assumeYes bool
+
+// SetAssumeYes flips the process-wide auto-confirm flag. Binaries call this
+// after parsing their own -y/--yes flag. The env var MAI_YES=1 is also honored.
+func SetAssumeYes(v bool) { assumeYes = v }
+
+// AssumeYes reports whether prompts should be auto-confirmed — either because
+// -y/--yes was set locally or MAI_YES=1 was propagated from the parent mai process.
+func AssumeYes() bool {
+	return assumeYes || os.Getenv("MAI_YES") == "1"
+}
+
+// Confirm prints prompt and reads a y/N answer from stdin. Returns true if the
+// user answers y/Y, or immediately true if AssumeYes() is set. Use for any
+// destructive or bulk operation.
+func Confirm(prompt string) bool {
+	if AssumeYes() {
+		return true
+	}
+	fmt.Print(prompt)
+	var answer string
+	fmt.Scanln(&answer)
+	return answer == "y" || answer == "Y"
+}
+
 // Fatal prints an error message and exits.
 func Fatal(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "mai: "+format+"\n", args...)

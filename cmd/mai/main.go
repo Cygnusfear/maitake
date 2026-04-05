@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/cygnusfear/maitake/internal/cli"
 	"github.com/cygnusfear/maitake/pkg/docs"
 	"github.com/cygnusfear/maitake/pkg/git"
 	"github.com/cygnusfear/maitake/pkg/notes"
@@ -15,6 +16,9 @@ import (
 
 // globalJSON is set by --json flag for machine-readable output.
 var globalJSON bool
+
+// globalYes is set by -y/--yes flag to auto-confirm prompts.
+var globalYes bool
 
 func main() {
 	// Extract global flags before subcommand dispatch
@@ -28,10 +32,13 @@ func main() {
 			}
 		case "--json":
 			globalJSON = true
+		case "-y", "--yes":
+			globalYes = true
 		default:
 			rawArgs = append(rawArgs, os.Args[i])
 		}
 	}
+	cli.SetAssumeYes(globalYes)
 
 	if len(rawArgs) < 1 {
 		runList(nil, []string{})
@@ -385,6 +392,11 @@ Create options:
   --target PATH              File path this note targets
   -d, --description TEXT     Body text
   -m, --message TEXT         Alias for -d
+
+Global flags:
+  -C <dir>                   Run as if from <dir>
+  --json                     Machine-readable JSON output
+  -y, --yes                  Auto-confirm all prompts
 `)
 }
 

@@ -122,7 +122,6 @@ func runSync(e notes.Engine, args []string) {
 	dir := repoPath()
 	cfg := docs.Config{}
 	dryRun := false
-	assumeYes := false
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -134,7 +133,7 @@ func runSync(e notes.Engine, args []string) {
 		case "--dry-run", "-n":
 			dryRun = true
 		case "--yes", "-y":
-			assumeYes = true
+			cli.SetAssumeYes(true)
 		}
 	}
 
@@ -164,14 +163,9 @@ func runSync(e notes.Engine, args []string) {
 		return
 	}
 
-	if total > 10 && !assumeYes {
-		fmt.Printf("\n%d files will be affected. Continue? [y/N] ", total)
-		var answer string
-		fmt.Scanln(&answer)
-		if answer != "y" && answer != "Y" {
-			fmt.Println("Aborted.")
-			return
-		}
+	if total > 10 && !cli.Confirm(fmt.Sprintf("\n%d files will be affected. Continue? [y/N] ", total)) {
+		fmt.Println("Aborted.")
+		return
 	}
 
 	result, err := docs.SyncDocs(e, dir, cfg)

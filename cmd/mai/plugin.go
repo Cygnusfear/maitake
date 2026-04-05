@@ -44,6 +44,9 @@ func dispatchPlugin(command string, args []string) bool {
 	if globalJSON {
 		env = append(env, "MAI_JSON=1")
 	}
+	if globalYes {
+		env = append(env, "MAI_YES=1")
+	}
 
 	// Exec the plugin with remaining args
 	cmd := exec.Command(binPath, args...)

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/cygnusfear/maitake/internal/cli"
 	"github.com/cygnusfear/maitake/pkg/guard"
 	"github.com/cygnusfear/maitake/pkg/migrate"
 	"github.com/cygnusfear/maitake/pkg/notes"
@@ -857,10 +858,7 @@ func runPurge(e notes.Engine, kind, status string) {
 		desc += "status=" + status
 	}
 
-	fmt.Printf("Will close %d notes (%s). Continue? [y/N] ", len(states), desc)
-	var answer string
-	fmt.Scanln(&answer)
-	if answer != "y" && answer != "Y" {
+	if !cli.Confirm(fmt.Sprintf("Will close %d notes (%s). Continue? [y/N] ", len(states), desc)) {
 		fmt.Println("Aborted.")
 		return
 	}
