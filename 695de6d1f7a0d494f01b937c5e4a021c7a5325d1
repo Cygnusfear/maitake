@@ -1,0 +1,39 @@
+skills/mai-review/SKILL.md
+  be61aaac37279284 49-51
+skills/mai-research/SKILL.md
+  be61aaac37279284 32
+skills/mai-harness/SKILL.md
+  be61aaac37279284 21
+skills/mai-adr/SKILL.md
+  be61aaac37279284 10-11
+skills/mai-setup/SKILL.md
+  be61aaac37279284 21-22
+skills/mai-orchestrate/SKILL.md
+  be61aaac37279284 102
+skills/mai-constraint/SKILL.md
+  be61aaac37279284 10-11
+skills/mai-pr/SKILL.md
+  be61aaac37279284 102-103
+skills/mai-agent/SKILL.md
+  be61aaac37279284 49-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "695de6d1f7a0d494f01b937c5e4a021c7a5325d1",
+  "prompts": {
+    "be61aaac37279284": {
+      "agent_id": {
+        "tool": "Brenna Lightcone Sandage",
+        "id": "496c6195-d751-4e48-a570-f81a06c53594",
+        "model": "zai/glm-5-turbo"
+      },
+      "human_author": "Alexander Mangel",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 0,
+      "accepted_lines": 23,
+      "overriden_lines": 0
+    }
+  }
+}
