@@ -223,4 +223,6 @@ type Engine interface {
 	Rebuild() error
 	Sync() error
 	GetConfig() Config
+	BeginBatch()
+	EndBatch()
 }

@@ -7,6 +7,8 @@ description: Use when recording architecture decisions (ADRs). Decisions are kin
 
 ADRs in maitake are `kind: decision` notes. They're stored in the notes ref, attached to the files they affect via `--target`, and visible to any agent that runs `mai context <file>`.
 
+> **Long ADRs — use the pipe pattern.** Write to `/tmp` first, pipe into `mai create` or `mai add-note`. (See mai-agent skill.)
+
 ## Quick start
 
 ```bash

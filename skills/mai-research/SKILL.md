@@ -29,6 +29,7 @@ mai show res-1234                  # read the assignment
 mai search "token refresh"         # find prior research and decisions on this topic
 # ... investigate code, run experiments, read docs ...
 
+# Long findings: write to /tmp first, pipe in (see mai-agent skill for the pipe pattern)
 mai add-note res-1234 "## Findings
 
 ### Mutex

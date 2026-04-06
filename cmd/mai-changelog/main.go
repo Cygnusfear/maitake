@@ -338,6 +338,14 @@ func runMigrate(e notes.Engine, args []string) {
 
 	sort.Strings(matches)
 
+	// Batch mode: defer index rebuild until all entries are ingested.
+	// Without this, migrating N entries is O(N²) — each write triggers a full
+	// index rebuild including BM25 reindexing of all existing notes.
+	if !dryRun {
+		e.BeginBatch()
+		defer e.EndBatch()
+	}
+
 	migrated := 0
 	skipped := 0
 	for _, path := range matches {

@@ -7,6 +7,8 @@ description: Use when setting or checking project rules that all agents must fol
 
 Constraints are hard rules attached to files, directories, or the project. Every agent sees them when they run `mai context`.
 
+> **Long constraints — use the pipe pattern.** Write to `/tmp` first, pipe in. (See mai-agent skill.)
+
 ## Setting constraints
 
 ```bash

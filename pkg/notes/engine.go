@@ -35,6 +35,28 @@ type RealEngine struct {
 
 	// Post-write hooks — external packages (e.g. pkg/docs) register here
 	postWriteHooks []PostWriteFunc
+
+	// Batch mode: skip index.Build() on every write — caller must call Rebuild() when done
+	batching bool
+}
+
+// BeginBatch enters batch mode — index rebuilds are deferred until EndBatch().
+// Use for bulk operations (imports, migrations) where per-write rebuild would be O(N²).
+func (e *RealEngine) BeginBatch() {
+	e.batching = true
+}
+
+// EndBatch exits batch mode and rebuilds the index once.
+func (e *RealEngine) EndBatch() {
+	e.batching = false
+	e.index.Build()
+}
+
+// rebuildIndex rebuilds the index unless we're in batch mode.
+func (e *RealEngine) rebuildIndex() {
+	if !e.batching {
+		e.index.Build()
+	}
 }
 
 // OnPostWrite registers a callback that fires after every Create or Append.
@@ -44,7 +66,11 @@ func (e *RealEngine) OnPostWrite(fn PostWriteFunc) {
 }
 
 // firePostWrite invokes all registered post-write hooks.
+// Skipped in batch mode — callers should fire hooks manually after EndBatch if needed.
 func (e *RealEngine) firePostWrite(noteID string, ref git.NotesRef, targetOID git.OID) {
+	if e.batching {
+		return
+	}
 	for _, fn := range e.postWriteHooks {
 		fn(e, noteID, ref, targetOID)
 	}
@@ -212,7 +238,7 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 
 	// Update index
 	e.index.Ingest(note)
-	e.index.Build()
+	e.rebuildIndex()
 
 	// Update cache with new ref tip
 	e.updateCache(ref)
@@ -327,7 +353,7 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 
 	// Update index
 	e.index.Ingest(note)
-	e.index.Build()
+	e.rebuildIndex()
 
 	// If this is a body edit on a doc note, update the YDoc state too
 	if opts.Field == "body" && creation.Kind == "doc" {
@@ -671,7 +697,7 @@ func (e *RealEngine) AppendRaw(ref git.NotesRef, targetOID git.OID, data []byte,
 		return
 	}
 	e.index.Ingest(note)
-	e.index.Build()
+	e.rebuildIndex()
 }
 
 // RepoPath returns the absolute path to the repo root.

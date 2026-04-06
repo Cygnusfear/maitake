@@ -18,6 +18,8 @@ This creates:
 2. `.maitake/config.toml` — sync remote + blocked hosts
 3. `.gitignore` entry — keeps `.maitake/` out of the repo
 
+> **Tip:** Long notes use the pipe pattern — write to `/tmp`, pipe into `mai add-note`. (See mai-agent skill.)
+
 ### What each flag does
 
 | Flag | What | Example |

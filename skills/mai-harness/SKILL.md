@@ -18,6 +18,7 @@ The harness fixes one problem: an agent edits a file before seeing what the repo
 1. Durable knowledge lives in `mai`, not chat.
 2. Critical rules mirror into `AGENTS.md` as physical tripwires.
 3. Every agent runs `mai context <file>` before touching that file.
+4. Long notes use the pipe pattern — write to `/tmp`, pipe into `mai add-note`. (See mai-agent skill.)
 4. Every worker prompt carries the arrival ritual.
 5. Verification keeps the harness from rotting.
 

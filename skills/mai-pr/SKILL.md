@@ -99,6 +99,8 @@ mai pr comment <id> -m "Race here" --file src/auth.ts --line 42
 
 Same as `mai add-note` but scoped to the PR. Supports file-located and line-located comments.
 
+> **Long comments — use the pipe pattern.** Write to `/tmp` first, pipe in. (See mai-agent skill.)
+
 ## Diff
 
 ```bash

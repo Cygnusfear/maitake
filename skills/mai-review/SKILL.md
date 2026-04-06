@@ -46,6 +46,9 @@ Every finding has three parts:
 - **AC** — what "fixed" looks like (acceptance criteria)
 - **REJECT** — what NOT to do (rejection criteria)
 
+> **Long findings — use the pipe pattern.** Write to `/tmp` first, then pipe in.
+> Never burn tokens rewriting a finding that failed. (See mai-agent skill for full pattern.)
+
 ```bash
 mai add-note tre-5c4a --file src/auth.ts \
   "Race condition in token refresh.

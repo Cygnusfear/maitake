@@ -30,6 +30,8 @@ func (m *mockExpandEngine) Doctor() (*DoctorReport, error)               { retur
 func (m *mockExpandEngine) Rebuild() error                               { return nil }
 func (m *mockExpandEngine) Sync() error                                  { return nil }
 func (m *mockExpandEngine) GetConfig() Config                            { return Config{} }
+func (m *mockExpandEngine) BeginBatch()                                  {}
+func (m *mockExpandEngine) EndBatch()                                    {}
 
 func (m *mockExpandEngine) Fold(id string) (*State, error) {
 	if s, ok := m.notes[id]; ok {

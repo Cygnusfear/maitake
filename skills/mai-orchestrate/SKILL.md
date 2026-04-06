@@ -99,6 +99,7 @@ mai context <target-file>       # see warnings, constraints, review findings
 # 3. Work...
 
 # 4. Comment progress (file-specific when relevant)
+# Long notes: write to /tmp first, pipe in (see mai-agent skill for the pipe pattern)
 mai add-note <ticket-id> "progress update"
 mai add-note <ticket-id> --file src/auth.ts "added mutex here"
 

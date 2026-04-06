@@ -46,6 +46,15 @@ mai add-note <ticket-id> --file src/auth.ts "details"   # file-specific comment
 mai add-note <ticket-id> --file src/auth.ts --line 42 "line-level detail"
 ```
 
+> **Long notes — use the pipe pattern.** Write to `/tmp` first, then pipe in.
+> Never burn tokens rewriting a note that failed.
+> ```bash
+> cat > /tmp/mai-draft.md << 'EOF'
+> ...long note content...
+> EOF
+> mai add-note <ticket-id> < /tmp/mai-draft.md
+> ```
+
 ### Creating new work
 
 ```bash
