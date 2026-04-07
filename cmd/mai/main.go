@@ -352,6 +352,9 @@ Lifecycle:
   add-note <id> [text]       Append comment (--file path, --line N for file-level)
   tag <id> +tag / -tag       Add or remove tag
   assign <id> <name>         Set assignee
+  title <id> <new title>     Rename a note
+  type <id> <new type>       Change ticket type
+  edit <id> [-d body]        Edit note body ($EDITOR if no -d)
   dep <id> <dep-id>          Add dependency
   dep tree <id>              Show dependency tree
   undep <id> <dep-id>        Remove dependency
