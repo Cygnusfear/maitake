@@ -1,0 +1,23 @@
+cmd/mai/main.go
+  be61aaac37279284 355-357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "49310984822d93e7bf0b6635c36da2d9d34f9a0d",
+  "prompts": {
+    "be61aaac37279284": {
+      "agent_id": {
+        "tool": "Brenna Lightcone Sandage",
+        "id": "496c6195-d751-4e48-a570-f81a06c53594",
+        "model": "zai/glm-5-turbo"
+      },
+      "human_author": "Alexander Mangel",
+      "messages": [],
+      "total_additions": 3,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
