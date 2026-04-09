@@ -27,6 +27,14 @@ type RealEngine struct {
 	index      *Index
 	config     Config
 
+	// Lazy index: skip Rebuild on write-only paths (ticket create)
+	indexReady bool
+	indexDirty bool // set by writes, cleared by rebuild
+
+	// Index rebuild debounce: coalesce rapid writes into one rebuild
+	indexRebuildMu    sync.Mutex
+	indexRebuildTimer *time.Timer
+
 	// Push debounce: coalesce rapid writes into one push
 	pushMu      sync.Mutex
 	pushPending bool
@@ -95,14 +103,55 @@ func NewEngine(repo git.Repo) (*RealEngine, error) {
 		e.scope = string(data)
 	}
 
-	// Build index from current notes
-	if err := e.Rebuild(); err != nil {
-		// Not fatal — index starts empty for new repos
-		_ = err
-	}
+	// Index rebuild deferred — lazily loaded on first read operation.
+	// Write-only paths (ticket create) skip index entirely.
 
 	return e, nil
 }
+// ensureIndex loads the index if needed.
+// First read: full Rebuild from git (lazy load).
+// After writes: Build() recomputes states from already-ingested notes (no git I/O).
+func (e *RealEngine) ensureIndex() {
+	if e.indexReady && !e.indexDirty {
+		return
+	}
+	if !e.indexReady {
+		// First load — full rebuild from git
+		_ = e.Rebuild()
+		e.indexReady = true
+		e.indexDirty = false
+	} else {
+		// Dirty after writes — just recompute states from ingested notes
+		e.index.Build()
+		e.indexDirty = false
+	}
+}
+
+// scheduleAsyncRebuild marks the index dirty and schedules a debounced rebuild.
+// Rapid creates (e.g. teams delegate 3 workers) coalesce into one rebuild.
+// CLI: the process exits before the timer fires — the next invocation lazy-loads.
+// In-process: if a read happens before the timer, ensureIndex sees dirty and rebuilds sync.
+func (e *RealEngine) scheduleAsyncRebuild(ref git.NotesRef) {
+	e.indexDirty = true
+
+	e.indexRebuildMu.Lock()
+	defer e.indexRebuildMu.Unlock()
+
+	if e.indexRebuildTimer != nil {
+		e.indexRebuildTimer.Stop()
+	}
+
+	e.indexRebuildTimer = time.AfterFunc(indexRebuildDelay, func() {
+		e.indexRebuildMu.Lock()
+		e.indexRebuildTimer = nil
+		e.indexRebuildMu.Unlock()
+
+		_ = e.Rebuild()
+		e.indexReady = true
+		e.indexDirty = false
+	})
+}
+
 
 // activeRef returns the notes ref for the current scope.
 func (e *RealEngine) activeRef() git.NotesRef {
@@ -193,6 +242,7 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	}
 
 	if opts.Kind == "doc" {
+		e.ensureIndex() // doc ownership check requires index
 		for _, edge := range note.Edges {
 			if edge.Type != "targets" || edge.Target.Kind != "path" {
 				continue
@@ -236,12 +286,11 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	note.Ref = string(ref)
 	note.Slot = opts.Slot
 
-	// Update index
+	// Lightweight index update — Ingest is O(1), no Build.
+	// Next read will Build if needed (dirty flag).
 	e.index.Ingest(note)
-	e.rebuildIndex()
-
-	// Update cache with new ref tip
-	e.updateCache(ref)
+	e.indexDirty = true
+	e.scheduleAsyncRebuild(ref)
 
 	// Auto-push to remote (debounced — coalesces rapid writes)
 	e.schedulePush(ref, note.ID)
@@ -261,7 +310,9 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		return nil, fmt.Errorf("kind is required")
 	}
 
-	// Resolve target note
+	// Resolve target — needs full index for ID resolution
+	e.ensureIndex()
+
 	// Resolve target — may be a top-level note or a comment
 	fullID, err := e.index.ResolveID(opts.TargetID)
 	edgeTargetID := fullID // edge points at what the caller asked for
@@ -351,22 +402,10 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 	note.Ref = string(ref)
 	note.Slot = opts.Slot
 
-	// Update index
+	// Lightweight index update — Ingest is O(1), no Build.
 	e.index.Ingest(note)
-	e.rebuildIndex()
-
-	// If this is a body edit on a doc note, update the YDoc state too
-	if opts.Field == "body" && creation.Kind == "doc" {
-		body := opts.Body
-		if body == "" {
-			body = opts.Value
-		}
-		// Post-write hooks handle CRDT updates (via pkg/docs)
-		_ = body // used by hooks via engine.Fold
-	}
-
-	// Update cache with new ref tip
-	e.updateCache(ref)
+	e.indexDirty = true
+	e.scheduleAsyncRebuild(ref)
 
 	// Auto-push to remote (debounced — coalesces rapid writes)
 	e.schedulePush(ref, fullID)
@@ -380,6 +419,7 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 
 // Get returns the raw creation note by ID (not folded).
 func (e *RealEngine) Get(id string) (*Note, error) {
+	e.ensureIndex()
 	fullID, err := e.index.ResolveID(id)
 	if err != nil {
 		return nil, err
@@ -396,6 +436,7 @@ func (e *RealEngine) Get(id string) (*Note, error) {
 
 // Fold returns the computed current state of a note.
 func (e *RealEngine) Fold(id string) (*State, error) {
+	e.ensureIndex()
 	fullID, err := e.index.ResolveID(id)
 	if err != nil {
 		return nil, err
@@ -412,6 +453,7 @@ func (e *RealEngine) Fold(id string) (*State, error) {
 
 // Context returns all open notes targeting a file path.
 func (e *RealEngine) Context(path string) ([]State, error) {
+	e.ensureIndex()
 	states := e.index.ContextForPath(path)
 	result := make([]State, len(states))
 	for i, s := range states {
@@ -422,6 +464,7 @@ func (e *RealEngine) Context(path string) ([]State, error) {
 
 // ContextAll returns all notes targeting a file path (open + closed).
 func (e *RealEngine) ContextAll(path string) ([]State, error) {
+	e.ensureIndex()
 	states := e.index.ContextAllForPath(path)
 	result := make([]State, len(states))
 	for i, s := range states {
@@ -432,6 +475,7 @@ func (e *RealEngine) ContextAll(path string) ([]State, error) {
 
 // Find returns all notes matching filters.
 func (e *RealEngine) Find(opts FindOptions) ([]State, error) {
+	e.ensureIndex()
 	states := e.index.Query(opts)
 	result := make([]State, len(states))
 	for i, s := range states {
@@ -442,11 +486,13 @@ func (e *RealEngine) Find(opts FindOptions) ([]State, error) {
 
 // List returns summary state for notes matching filters.
 func (e *RealEngine) List(opts ListOptions) ([]StateSummary, error) {
+	e.ensureIndex()
 	return e.index.QueryList(opts), nil
 }
 
 // Search performs BM25 full-text search across all notes.
 func (e *RealEngine) Search(query string, opts SearchOptions) ([]SearchResult, error) {
+	e.ensureIndex()
 	if e.index.Text == nil {
 		return nil, nil
 	}
@@ -455,6 +501,7 @@ func (e *RealEngine) Search(query string, opts SearchOptions) ([]SearchResult, e
 
 // Refs returns all notes with edges pointing at a target (reverse lookup).
 func (e *RealEngine) Refs(target string) ([]State, error) {
+	e.ensureIndex()
 	// Search all states for edges targeting this
 	var results []State
 	for _, state := range e.index.States {
@@ -486,6 +533,7 @@ func matchesTarget(state *State, creation *Note, target string) bool {
 
 // Kinds returns all kinds in use with counts.
 func (e *RealEngine) Kinds() ([]KindCount, error) {
+	e.ensureIndex()
 	return e.index.KindCounts(), nil
 }
 
@@ -531,6 +579,7 @@ func (e *RealEngine) CurrentBranch() string {
 
 // Doctor reports graph health.
 func (e *RealEngine) Doctor() (*DoctorReport, error) {
+	e.ensureIndex()
 	report := &DoctorReport{
 		ByKind:   make(map[string]int),
 		ByStatus: make(map[string]int),
@@ -648,6 +697,7 @@ func (e *RealEngine) GitBranch() string {
 // IsMerged checks if the 'from' branch has been merged into 'into'.
 // Uses git merge-base --is-ancestor.
 func (e *RealEngine) IsMerged(from, into string) bool {
+	e.ensureIndex()
 	merged, err := e.repo.IsAncestor(from, into)
 	if err != nil {
 		return false
@@ -697,7 +747,8 @@ func (e *RealEngine) AppendRaw(ref git.NotesRef, targetOID git.OID, data []byte,
 		return
 	}
 	e.index.Ingest(note)
-	e.rebuildIndex()
+	e.indexDirty = true
+	e.scheduleAsyncRebuild(ref)
 }
 
 // RepoPath returns the absolute path to the repo root.
@@ -843,3 +894,4 @@ func (e *RealEngine) getOrCreateTarget(note *Note) (git.OID, error) {
 
 // NoteRefs delegates to the git repo to list maitake notes refs.
 // This extends the git.Repo interface for maitake-specific ref filtering.
+const indexRebuildDelay = 500 * time.Millisecond
