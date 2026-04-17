@@ -1,0 +1,58 @@
+pkg/notes/cache.go
+  35fd64e0a5046f9a 161-163,193-222,344-408
+  07ed175674a9262f 45-63,67-68,103-126,156,164-192,223-306
+pkg/notes/engine.go
+  35fd64e0a5046f9a 696-701,733,740-742,757
+  07ed175674a9262f 131-177,469-473,491-495,546-550,559-560,599-603
+test/integration_test.go
+  35fd64e0a5046f9a 4-5,9,312-473
+pkg/notes/cache_test.go
+  07ed175674a9262f 137-235
+  35fd64e0a5046f9a 236-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "037f599186f6505114908ba20190393b4ab1487a",
+  "prompts": {
+    "07ed175674a9262f": {
+      "agent_id": {
+        "tool": "Eleanor Jupiter Corsi",
+        "id": "afc15beb-2d97-44c4-ae8b-0314859bb95c",
+        "model": "openai-codex/gpt-5.4"
+      },
+      "human_author": "Alexander Mangel",
+      "messages": [],
+      "total_additions": 446,
+      "total_deletions": 90,
+      "accepted_lines": 406,
+      "overriden_lines": 0
+    },
+    "35fd64e0a5046f9a": {
+      "agent_id": {
+        "tool": "Paris Rover Fischer",
+        "id": "019d97fd-4290-74f8-ac77-afee7e0d80be",
+        "model": "anthropic/claude-opus-4-7"
+      },
+      "human_author": "Alexander Mangel",
+      "messages": [],
+      "total_additions": 385,
+      "total_deletions": 16,
+      "accepted_lines": 382,
+      "overriden_lines": 0
+    },
+    "55d6f63d1a6d4345": {
+      "agent_id": {
+        "tool": "George Star Cannon",
+        "id": "f1e9c2bb-e089-4807-999c-9a00316f69db",
+        "model": "openai-codex/gpt-5.4"
+      },
+      "human_author": "Alexander Mangel",
+      "messages": [],
+      "total_additions": 25,
+      "total_deletions": 0,
+      "accepted_lines": 25,
+      "overriden_lines": 0
+    }
+  }
+}
