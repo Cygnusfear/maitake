@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/cygnusfear/maitake/pkg/git"
@@ -41,15 +42,32 @@ type cacheEnvelope struct {
 	Notes  []cachedNote `json:"notes"`
 }
 
+type summaryCacheEnvelope struct {
+	RefTip     string              `json:"refTip"`
+	Entries    []summaryCacheEntry `json:"entries"`
+	KindCounts []KindCount         `json:"kindCounts"`
+}
+
+type summaryCacheEntry struct {
+	Summary   StateSummary `json:"summary"`
+	TargetOID string       `json:"targetOid"`
+}
+
+func cacheFilePath(repoPath string, tipOID git.OID, suffix string) string {
+	dir := cacheDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, repoHash(repoPath), string(tipOID)+suffix)
+}
+
 // loadCache tries to load a cached index for the given ref tip.
 // Returns the parsed notes if the cache is valid, or nil if miss/stale.
 func loadCache(repoPath string, tipOID git.OID) []*Note {
-	dir := cacheDir()
-	if dir == "" {
+	path := cacheFilePath(repoPath, tipOID, ".json")
+	if path == "" {
 		return nil
 	}
-
-	path := filepath.Join(dir, repoHash(repoPath), string(tipOID)+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -82,6 +100,30 @@ func loadCache(repoPath string, tipOID git.OID) []*Note {
 	return notes
 }
 
+func loadSummaryCache(repoPath string, tipOID git.OID) *summaryCacheEnvelope {
+	path := cacheFilePath(repoPath, tipOID, ".summary.json")
+	if path == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var env summaryCacheEnvelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return nil
+	}
+	if git.OID(env.RefTip) != tipOID {
+		return nil
+	}
+	if len(env.Entries) == 0 && len(env.KindCounts) > 0 {
+		return nil // old summary-cache schema; force one rebuild to refresh
+	}
+	return &env
+}
+
 // writeCache writes parsed notes to the cache for the given ref tip.
 func writeCache(repoPath string, tipOID git.OID, notes []*Note) {
 	dir := cacheDir()
@@ -111,11 +153,157 @@ func writeCache(repoPath string, tipOID git.OID, notes []*Note) {
 		return
 	}
 
-	path := filepath.Join(repoDir, string(tipOID)+".json")
+	path := cacheFilePath(repoPath, tipOID, ".json")
 	os.WriteFile(path, data, 0644)
 
 	// Prune old cache files — keep only the 2 most recent
 	pruneCache(repoDir, 2)
+
+	// Opportunistic cross-repo GC (rate-limited via .last-gc marker)
+	pruneStaleRepoCaches(dir, pruneStaleRepoCachesMaxAge, pruneStaleRepoCachesCooldown, time.Now())
+}
+
+func writeSummaryCache(repoPath string, tipOID git.OID, entries []summaryCacheEntry, kindCounts []KindCount) {
+	dir := cacheDir()
+	if dir == "" {
+		return
+	}
+
+	repoDir := filepath.Join(dir, repoHash(repoPath))
+	if err := os.MkdirAll(repoDir, 0755); err != nil {
+		return
+	}
+
+	env := summaryCacheEnvelope{
+		RefTip:     string(tipOID),
+		Entries:    entries,
+		KindCounts: kindCounts,
+	}
+
+	data, err := json.Marshal(env)
+	if err != nil {
+		return
+	}
+
+	path := cacheFilePath(repoPath, tipOID, ".summary.json")
+	os.WriteFile(path, data, 0644)
+	pruneCache(repoDir, 4)
+}
+
+// summaryEntriesFromIndex derives summary-cache entries from a built Index.
+// Used by Rebuild's cache-hit branch (so a stale or absent summary self-heals)
+// and by updateCache (so writes keep the summary in sync with the full cache).
+func summaryEntriesFromIndex(idx *Index) []summaryCacheEntry {
+	entries := make([]summaryCacheEntry, 0, len(idx.States))
+	for _, state := range idx.States {
+		creation := idx.CreationNotes[state.ID]
+		targetOID := ""
+		if creation != nil {
+			targetOID = creation.TargetOID
+		}
+		entries = append(entries, summaryCacheEntry{
+			Summary:   ToSummary(state),
+			TargetOID: targetOID,
+		})
+	}
+	return entries
+}
+
+// summaryCacheExists reports whether a summary cache file is already present
+// for the given ref tip. Used to avoid redundant rewrites when the file is fresh.
+func summaryCacheExists(repoPath string, tipOID git.OID) bool {
+	path := cacheFilePath(repoPath, tipOID, ".summary.json")
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func querySummaries(summaries []StateSummary, opts ListOptions) []StateSummary {
+	filtered := make([]StateSummary, 0, len(summaries))
+	for _, s := range summaries {
+		if opts.Kind != "" && s.Kind != opts.Kind {
+			continue
+		}
+		if opts.Status != "" && opts.Status != "all" && s.Status != opts.Status {
+			continue
+		}
+		if opts.Type != "" && s.Type != opts.Type {
+			continue
+		}
+		if opts.Assignee != "" && s.Assignee != opts.Assignee {
+			continue
+		}
+		if opts.Tag != "" && !contains(s.Tags, opts.Tag) {
+			continue
+		}
+		if opts.Target != "" && !contains(s.Targets, opts.Target) {
+			continue
+		}
+		filtered = append(filtered, s)
+	}
+
+	switch opts.SortBy {
+	case "priority":
+		sort.Slice(filtered, func(i, j int) bool {
+			return filtered[i].Priority < filtered[j].Priority
+		})
+	case "updated":
+		sort.Slice(filtered, func(i, j int) bool {
+			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+		})
+	default:
+		sort.Slice(filtered, func(i, j int) bool {
+			return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+		})
+	}
+
+	if opts.Limit > 0 && len(filtered) > opts.Limit {
+		filtered = filtered[:opts.Limit]
+	}
+
+	return filtered
+}
+
+func summaryEntries(entries []summaryCacheEntry) []StateSummary {
+	summaries := make([]StateSummary, len(entries))
+	for i, entry := range entries {
+		summaries[i] = entry.Summary
+	}
+	return summaries
+}
+
+func resolveSummaryEntry(entries []summaryCacheEntry, partial string) (*summaryCacheEntry, string, error) {
+	for i := range entries {
+		if entries[i].Summary.ID == partial {
+			return &entries[i], partial, nil
+		}
+	}
+
+	var match *summaryCacheEntry
+	var fullID string
+	var matches []string
+	for i := range entries {
+		id := entries[i].Summary.ID
+		if id == "" || !strings.Contains(id, partial) {
+			continue
+		}
+		if match == nil {
+			match = &entries[i]
+			fullID = id
+		}
+		matches = append(matches, id)
+	}
+
+	switch len(matches) {
+	case 0:
+		return nil, "", nil
+	case 1:
+		return match, fullID, nil
+	default:
+		return nil, "", &AmbiguousIDError{Partial: partial, Matches: matches}
+	}
 }
 
 // pruneCache removes old cache files, keeping only the N most recent.
@@ -151,6 +339,71 @@ func pruneCache(dir string, keep int) {
 	for i := keep; i < len(files); i++ {
 		os.Remove(filepath.Join(dir, files[i].name))
 	}
+}
+
+// pruneStaleRepoCachesMaxAge is how long a repo cache dir can be untouched
+// before the opportunistic GC deletes it.
+const pruneStaleRepoCachesMaxAge = 30 * 24 * time.Hour
+
+// pruneStaleRepoCachesCooldown is the minimum interval between cross-repo GC
+// runs, tracked via the .last-gc marker file in the cache root.
+const pruneStaleRepoCachesCooldown = 24 * time.Hour
+
+// pruneStaleRepoCaches deletes repo-hash directories under the cache root
+// whose mtime is older than maxAge. Runs at most once per cooldown interval,
+// gated by a .last-gc marker file. Invoked opportunistically from write paths.
+// Silent on errors — cache GC is best-effort housekeeping.
+func pruneStaleRepoCaches(root string, maxAge, cooldown time.Duration, now time.Time) {
+	if root == "" {
+		return
+	}
+	marker := filepath.Join(root, ".last-gc")
+	if info, err := os.Stat(marker); err == nil {
+		if now.Sub(info.ModTime()) < cooldown {
+			return
+		}
+	}
+	// Touch the marker first so concurrent processes don't all scan.
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return
+	}
+	_ = os.WriteFile(marker, []byte(now.UTC().Format(time.RFC3339)), 0644)
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	cutoff := now.Add(-maxAge)
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		// Repo-hash dirs are 16 lowercase hex chars. Skip anything else
+		// to avoid clobbering unrelated entries a future refactor might add.
+		if !isRepoHashDir(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			_ = os.RemoveAll(filepath.Join(root, e.Name()))
+		}
+	}
+}
+
+func isRepoHashDir(name string) bool {
+	if len(name) != 16 {
+		return false
+	}
+	for _, c := range name {
+		isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+		if !isHex {
+			return false
+		}
+	}
+	return true
 }
 
 // refTipOID returns the commit OID at the tip of a notes ref.

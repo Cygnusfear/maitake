@@ -1,9 +1,12 @@
 package test
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cygnusfear/maitake/pkg/git"
@@ -304,5 +307,167 @@ func TestEngine_PersistsAcrossRestart(t *testing.T) {
 	}
 	if state.Body != "Persistent ticket." {
 		t.Errorf("Body = %q", state.Body)
+	}
+}
+
+
+// TestSummaryCacheSelfHeal ensures that when the full cache exists for a ref tip
+// but the summary cache does not, the next engine invocation rebuilds the summary
+// cache as a side-effect of Rebuild's cache-hit branch. This regresses the
+// real-world bug where updateCache wrote only the full cache, leaving subsequent
+// ls/kinds/show commands stuck on the slow path until a cache miss occurred.
+func TestSummaryCacheSelfHeal(t *testing.T) {
+	dir := setupRepo(t)
+	repo, err := git.NewGitRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a note so the notes ref exists and has a tip.
+	if _, err := engine.Create(notes.CreateOptions{
+		Kind:  "ticket",
+		Title: "self-heal target",
+		Type:  "task",
+		Body:  "body",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Prime the cache — first List call triggers Rebuild which writes both
+	// the full cache and the summary cache.
+	if _, err := engine.List(notes.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Locate the cache directory the engine uses. Mirror the hashing strategy
+	// in pkg/notes/cache.go: first 8 bytes of sha256(repoPath), hex.
+	home, _ := os.UserHomeDir()
+	sum := sha256.Sum256([]byte(dir))
+	hash := fmt.Sprintf("%x", sum[:8])
+	repoCacheDir := filepath.Join(home, ".maitake", "cache", hash)
+
+	// Delete the summary cache file(s) only, leaving the full cache in place.
+	entries, err := os.ReadDir(repoCacheDir)
+	if err != nil {
+		t.Fatalf("read cache dir: %v", err)
+	}
+	deletedSummary := false
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".summary.json") {
+			if err := os.Remove(filepath.Join(repoCacheDir, e.Name())); err != nil {
+				t.Fatalf("remove summary: %v", err)
+			}
+			deletedSummary = true
+		}
+	}
+	if !deletedSummary {
+		t.Fatal("no summary cache file found to delete — engine never wrote one")
+	}
+
+	// Fresh engine forces Rebuild from the existing full cache.
+	engine2, err := notes.NewEngine(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine2.List(notes.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// After the List call, the summary cache should have been re-created.
+	entries2, _ := os.ReadDir(repoCacheDir)
+	foundSummary := false
+	for _, e := range entries2 {
+		if strings.HasSuffix(e.Name(), ".summary.json") {
+			foundSummary = true
+			break
+		}
+	}
+	if !foundSummary {
+		t.Fatal("summary cache was NOT rewritten after Rebuild — self-heal regression")
+	}
+}
+
+
+// TestUpdateCacheWritesSummary ensures that a write (which triggers
+// scheduleAsyncRebuild -> eventually updateCache) results in both the full
+// cache AND the summary cache being written for the new ref tip. This
+// regresses the bug where updateCache wrote only the full cache, forcing
+// every ls/show on the new tip through a 200MB deserialization path.
+func TestUpdateCacheWritesSummary(t *testing.T) {
+	dir := setupRepo(t)
+	repo, err := git.NewGitRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First write — creates the notes ref.
+	if _, err := engine.Create(notes.CreateOptions{
+		Kind: "ticket", Title: "first", Type: "task", Body: "b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Prime: List triggers Rebuild which writes both caches.
+	if _, err := engine.List(notes.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second write — bumps the notes ref tip.
+	if _, err := engine.Create(notes.CreateOptions{
+		Kind: "ticket", Title: "second", Type: "task", Body: "b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Next read — updateCache OR Rebuild writes caches for the new tip.
+	if _, err := engine.List(notes.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	home, _ := os.UserHomeDir()
+	sum := sha256.Sum256([]byte(dir))
+	hash := fmt.Sprintf("%x", sum[:8])
+	repoCacheDir := filepath.Join(home, ".maitake", "cache", hash)
+
+	entries, err := os.ReadDir(repoCacheDir)
+	if err != nil {
+		t.Fatalf("read cache dir: %v", err)
+	}
+
+	// Each tip should have both a .json and a .summary.json counterpart.
+	byPrefix := map[string]map[string]bool{}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".summary.json") {
+			prefix := strings.TrimSuffix(name, ".summary.json")
+			if byPrefix[prefix] == nil {
+				byPrefix[prefix] = map[string]bool{}
+			}
+			byPrefix[prefix]["summary"] = true
+		} else if strings.HasSuffix(name, ".json") {
+			prefix := strings.TrimSuffix(name, ".json")
+			if byPrefix[prefix] == nil {
+				byPrefix[prefix] = map[string]bool{}
+			}
+			byPrefix[prefix]["full"] = true
+		}
+	}
+
+	if len(byPrefix) == 0 {
+		t.Fatal("no cache files written at all")
+	}
+	for prefix, kinds := range byPrefix {
+		if !kinds["full"] {
+			t.Errorf("tip %q: missing full cache", prefix)
+		}
+		if !kinds["summary"] {
+			t.Errorf("tip %q: missing summary cache (updateCache did not write it)", prefix)
+		}
 	}
 }

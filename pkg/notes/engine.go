@@ -108,6 +108,7 @@ func NewEngine(repo git.Repo) (*RealEngine, error) {
 
 	return e, nil
 }
+
 // ensureIndex loads the index if needed.
 // First read: full Rebuild from git (lazy load).
 // After writes: Build() recomputes states from already-ingested notes (no git I/O).
@@ -125,6 +126,53 @@ func (e *RealEngine) ensureIndex() {
 		e.index.Build()
 		e.indexDirty = false
 	}
+}
+
+func (e *RealEngine) loadSummaryCache() *summaryCacheEnvelope {
+	if e.indexDirty {
+		return nil
+	}
+	tipOID := refTipOID(e.repo, e.activeRef())
+	if tipOID == "" {
+		return nil
+	}
+	return loadSummaryCache(e.repoPath, tipOID)
+}
+
+func (e *RealEngine) loadNoteFromSummaryCache(id string) (*Note, *State, error) {
+	cached := e.loadSummaryCache()
+	if cached == nil {
+		return nil, nil, nil
+	}
+	entry, fullID, err := resolveSummaryEntry(cached.Entries, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if entry == nil || entry.TargetOID == "" {
+		return nil, nil, nil
+	}
+
+	rawNotes := e.repo.GetNotes(e.activeRef(), git.OID(entry.TargetOID))
+	if len(rawNotes) == 0 {
+		return nil, nil, nil
+	}
+
+	idx := NewIndex()
+	for _, raw := range rawNotes {
+		note, err := Parse([]byte(raw))
+		if err != nil {
+			continue
+		}
+		note.TargetOID = entry.TargetOID
+		note.Ref = string(e.activeRef())
+		idx.Ingest(note)
+	}
+	creation := idx.CreationNotes[fullID]
+	if creation == nil {
+		return nil, nil, fmt.Errorf("note %q not found", id)
+	}
+	state := foldEventsSorted(creation, idx.EventsByTarget[fullID])
+	return creation, state, nil
 }
 
 // scheduleAsyncRebuild marks the index dirty and schedules a debounced rebuild.
@@ -151,7 +199,6 @@ func (e *RealEngine) scheduleAsyncRebuild(ref git.NotesRef) {
 		e.indexDirty = false
 	})
 }
-
 
 // activeRef returns the notes ref for the current scope.
 func (e *RealEngine) activeRef() git.NotesRef {
@@ -419,6 +466,11 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 
 // Get returns the raw creation note by ID (not folded).
 func (e *RealEngine) Get(id string) (*Note, error) {
+	if !e.indexReady && !e.indexDirty {
+		if note, _, err := e.loadNoteFromSummaryCache(id); note != nil || err != nil {
+			return note, err
+		}
+	}
 	e.ensureIndex()
 	fullID, err := e.index.ResolveID(id)
 	if err != nil {
@@ -436,6 +488,11 @@ func (e *RealEngine) Get(id string) (*Note, error) {
 
 // Fold returns the computed current state of a note.
 func (e *RealEngine) Fold(id string) (*State, error) {
+	if !e.indexReady && !e.indexDirty {
+		if _, state, err := e.loadNoteFromSummaryCache(id); state != nil || err != nil {
+			return state, err
+		}
+	}
 	e.ensureIndex()
 	fullID, err := e.index.ResolveID(id)
 	if err != nil {
@@ -486,6 +543,11 @@ func (e *RealEngine) Find(opts FindOptions) ([]State, error) {
 
 // List returns summary state for notes matching filters.
 func (e *RealEngine) List(opts ListOptions) ([]StateSummary, error) {
+	if !e.indexReady && !e.indexDirty {
+		if cached := e.loadSummaryCache(); cached != nil {
+			return querySummaries(summaryEntries(cached.Entries), opts), nil
+		}
+	}
 	e.ensureIndex()
 	return e.index.QueryList(opts), nil
 }
@@ -494,7 +556,8 @@ func (e *RealEngine) List(opts ListOptions) ([]StateSummary, error) {
 func (e *RealEngine) Search(query string, opts SearchOptions) ([]SearchResult, error) {
 	e.ensureIndex()
 	if e.index.Text == nil {
-		return nil, nil
+		e.index.Text = &TextIndex{}
+		e.index.Text.build(e.index.States)
 	}
 	return e.index.Text.SearchFiltered(query, opts), nil
 }
@@ -533,6 +596,11 @@ func matchesTarget(state *State, creation *Note, target string) bool {
 
 // Kinds returns all kinds in use with counts.
 func (e *RealEngine) Kinds() ([]KindCount, error) {
+	if !e.indexReady && !e.indexDirty {
+		if cached := e.loadSummaryCache(); cached != nil {
+			return cached.KindCounts, nil
+		}
+	}
 	e.ensureIndex()
 	return e.index.KindCounts(), nil
 }
@@ -625,6 +693,12 @@ func (e *RealEngine) Rebuild() error {
 			}
 			idx.Build()
 			e.index = idx
+			// Self-heal: if the summary cache is missing for this tip, write it.
+			// Prevents ls/kinds/show from paying full-cache deserialization cost
+			// after updateCache wrote only the full cache on the previous tip bump.
+			if !summaryCacheExists(e.repoPath, tipOID) {
+				writeSummaryCache(e.repoPath, tipOID, summaryEntriesFromIndex(idx), idx.KindCounts())
+			}
 			return nil
 		}
 	}
@@ -656,12 +730,16 @@ func (e *RealEngine) Rebuild() error {
 	// Write cache for next time
 	if tipOID != "" {
 		writeCache(e.repoPath, tipOID, allNotes)
+		writeSummaryCache(e.repoPath, tipOID, summaryEntriesFromIndex(idx), idx.KindCounts())
 	}
 
 	return nil
 }
 
 // updateCache writes the current index to the cache after a write.
+// Writes both the full note cache AND the summary cache so that subsequent
+// ls/kinds/show commands can hit the summary fast path without paying the
+// 200MB+ full-cache deserialization cost.
 func (e *RealEngine) updateCache(ref git.NotesRef) {
 	tipOID := refTipOID(e.repo, ref)
 	if tipOID == "" {
@@ -676,6 +754,7 @@ func (e *RealEngine) updateCache(ref git.NotesRef) {
 		allNotes = append(allNotes, events...)
 	}
 	writeCache(e.repoPath, tipOID, allNotes)
+	writeSummaryCache(e.repoPath, tipOID, summaryEntriesFromIndex(e.index), e.index.KindCounts())
 }
 
 // currentGitBranch returns the short branch name (e.g. "feature/auth").
