@@ -341,3 +341,187 @@ func TestIsRepoHashDir(t *testing.T) {
 		}
 	}
 }
+
+
+func TestTextIndexCache_WriteAndLoad(t *testing.T) {
+	repoPath := t.TempDir()
+	tipOID := git.OID("textidxtip")
+
+	// Build a small TextIndex manually
+	ti := &TextIndex{
+		docIDs:   []string{"t-1", "t-2"},
+		docLens:  []float64{6, 4},
+		docTerms: []map[string]float64{{"auth": 3, "bug": 1}, {"auth": 2}},
+		df:       map[string]int{"auth": 2, "bug": 1},
+		avgDL:    5,
+		docCount: 2,
+	}
+	writeTextIndexCache(repoPath, tipOID, ti)
+
+	env := loadTextIndexCache(repoPath, tipOID)
+	if env == nil {
+		t.Fatal("loadTextIndexCache returned nil")
+	}
+	if env.DocCount != 2 {
+		t.Errorf("DocCount = %d, want 2", env.DocCount)
+	}
+	if env.AvgDL != 5 {
+		t.Errorf("AvgDL = %v, want 5", env.AvgDL)
+	}
+	if env.DF["auth"] != 2 {
+		t.Errorf("DF[auth] = %d, want 2", env.DF["auth"])
+	}
+	if len(env.Docs) != 2 {
+		t.Fatalf("docs = %d, want 2", len(env.Docs))
+	}
+}
+
+func TestTextIndexCache_MissOnWrongTip(t *testing.T) {
+	repoPath := t.TempDir()
+	ti := &TextIndex{docIDs: []string{"t"}, docLens: []float64{1}, docTerms: []map[string]float64{{"x": 1}}, df: map[string]int{"x": 1}, avgDL: 1, docCount: 1}
+	writeTextIndexCache(repoPath, git.OID("tip-a"), ti)
+	if env := loadTextIndexCache(repoPath, git.OID("tip-b")); env != nil {
+		t.Error("should miss on wrong tip")
+	}
+}
+
+func TestTextIndexCache_SkipsEmpty(t *testing.T) {
+	repoPath := t.TempDir()
+	writeTextIndexCache(repoPath, git.OID("nothing"), &TextIndex{docCount: 0})
+	if textIndexCacheExists(repoPath, git.OID("nothing")) {
+		t.Error("should not write cache for empty index")
+	}
+}
+
+func TestTextIndex_HydrateFromCache(t *testing.T) {
+	env := &textIndexEnvelope{
+		DocCount: 2,
+		AvgDL:    5,
+		DF:       map[string]int{"alpha": 1, "beta": 2},
+		Docs: []persistedDoc{
+			{ID: "t-1", DocLen: 6, Terms: map[string]float64{"alpha": 3, "beta": 1}},
+			{ID: "t-2", DocLen: 4, Terms: map[string]float64{"beta": 1}},
+		},
+	}
+	states := map[string]*State{
+		"t-1": {ID: "t-1", Title: "one"},
+		"t-2": {ID: "t-2", Title: "two"},
+	}
+
+	ti := &TextIndex{}
+	ti.hydrateFromCache(env, func(id string) *State { return states[id] })
+
+	if ti.docCount != 2 {
+		t.Errorf("docCount = %d", ti.docCount)
+	}
+	if ti.avgDL != 5 {
+		t.Errorf("avgDL = %v", ti.avgDL)
+	}
+	if ti.df["beta"] != 2 {
+		t.Errorf("df[beta] = %d", ti.df["beta"])
+	}
+	// Query "alpha" should only match t-1
+	results := ti.Search("alpha", 10)
+	if len(results) != 1 || results[0].ID != "t-1" {
+		t.Errorf("search(alpha) = %v", results)
+	}
+}
+
+func TestTextIndex_HydrateSkipsMissingStates(t *testing.T) {
+	env := &textIndexEnvelope{
+		DocCount: 2,
+		AvgDL:    5,
+		DF:       map[string]int{"alpha": 2},
+		Docs: []persistedDoc{
+			{ID: "have", DocLen: 3, Terms: map[string]float64{"alpha": 3}},
+			{ID: "gone", DocLen: 3, Terms: map[string]float64{"alpha": 3}},
+		},
+	}
+	states := map[string]*State{"have": {ID: "have", Title: "survivor"}}
+
+	ti := &TextIndex{}
+	ti.hydrateFromCache(env, func(id string) *State { return states[id] })
+
+	if ti.docCount != 1 {
+		t.Errorf("docCount = %d, want 1 (missing state should be dropped)", ti.docCount)
+	}
+	if len(ti.states) != 1 || ti.states[0].ID != "have" {
+		t.Errorf("states = %v", ti.states)
+	}
+}
+
+func TestStateFromSummary_CopiesFilterFields(t *testing.T) {
+	resolved := true
+	s := StateSummary{
+		ID: "t-1", Kind: "ticket", Status: "open", Type: "task",
+		Priority: 2, Title: "find me", Tags: []string{"perf"},
+		Targets: []string{"pkg/notes/search.go"}, Deps: []string{"t-0"},
+		Assignee: "alex", Resolved: &resolved, Branch: "main",
+	}
+	st := stateFromSummary(s)
+	if st.ID != "t-1" || st.Title != "find me" || st.Status != "open" {
+		t.Errorf("scalar fields not copied: %+v", st)
+	}
+	if st.Resolved == nil || *st.Resolved != true {
+		t.Error("resolved pointer lost")
+	}
+	if len(st.Tags) != 1 || st.Tags[0] != "perf" {
+		t.Errorf("tags = %v", st.Tags)
+	}
+}
+
+func TestPruneCache_KeepsCompanionFilesOfRecentTips(t *testing.T) {
+	dir := t.TempDir()
+	// Three tips, each with a .json + .summary.json + .textindex.json triple.
+	// Oldest tip gets all three files dropped; newer two keep everything.
+	tips := []string{"tipA", "tipB", "tipC"}
+	for _, tip := range tips {
+		for _, suffix := range []string{".json", ".summary.json", ".textindex.gob"} {
+			name := filepath.Join(dir, tip+suffix)
+			if err := os.WriteFile(name, []byte("{}"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	pruneCache(dir, 2)
+
+	remaining, _ := os.ReadDir(dir)
+	names := map[string]bool{}
+	for _, e := range remaining {
+		names[e.Name()] = true
+	}
+	if len(names) != 6 {
+		t.Fatalf("remaining files = %d, want 6 (two tips × three suffixes): %v", len(names), names)
+	}
+	// oldest tip gone
+	for _, suffix := range []string{".json", ".summary.json", ".textindex.gob"} {
+		if names["tipA"+suffix] {
+			t.Errorf("tipA%s should be pruned", suffix)
+		}
+	}
+	// newest two present
+	for _, tip := range []string{"tipB", "tipC"} {
+		for _, suffix := range []string{".json", ".summary.json", ".textindex.gob"} {
+			if !names[tip+suffix] {
+				t.Errorf("%s%s should be kept", tip, suffix)
+			}
+		}
+	}
+}
+
+func TestTipFromCacheFileName(t *testing.T) {
+	cases := map[string]string{
+		"abc123.json":           "abc123",
+		"abc123.summary.json":   "abc123",
+		"abc123.textindex.gob":  "abc123",
+		"weird":                 "",
+		"abc123.unknown":        "",
+	}
+	for in, want := range cases {
+		if got := tipFromCacheFileName(in); got != want {
+			t.Errorf("tipFromCacheFileName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

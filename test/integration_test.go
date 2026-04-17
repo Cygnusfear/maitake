@@ -471,3 +471,120 @@ func TestUpdateCacheWritesSummary(t *testing.T) {
 		}
 	}
 }
+
+
+// TestSearchPersistsTextIndex ensures the first search after a rebuild writes
+// a .textindex.json companion file, and that a subsequent engine invocation
+// can serve search without loading the full cache. Regresses the pre-fix
+// behavior where every CLI call rebuilt BM25 from scratch (3-7s, 680MB RSS).
+func TestSearchPersistsTextIndex(t *testing.T) {
+	dir := setupRepo(t)
+	repo, err := git.NewGitRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Create(notes.CreateOptions{
+		Kind: "ticket", Title: "auth bug needs fixing", Type: "task",
+		Tags: []string{"auth", "backend"},
+		Body: "The token refresh has a race condition.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Prime summary/full cache.
+	if _, err := engine.List(notes.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// First search — builds + persists text index.
+	results, err := engine.Search("auth", notes.SearchOptions{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("first search returned no results")
+	}
+
+	home, _ := os.UserHomeDir()
+	sum := sha256.Sum256([]byte(dir))
+	hash := fmt.Sprintf("%x", sum[:8])
+	repoCacheDir := filepath.Join(home, ".maitake", "cache", hash)
+
+	entries, _ := os.ReadDir(repoCacheDir)
+	foundTextIndex := false
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".textindex.gob") {
+			foundTextIndex = true
+			break
+		}
+	}
+	if !foundTextIndex {
+		t.Fatal(".textindex.gob was not persisted after first search")
+	}
+}
+
+// TestSearchFastPathAvoidsFullCache verifies that a fresh engine with both
+// summary + textindex caches present can return search results without
+// loading the full cache (simulated by deleting it before the search).
+func TestSearchFastPathAvoidsFullCache(t *testing.T) {
+	dir := setupRepo(t)
+	repo, err := git.NewGitRepo(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := notes.NewEngine(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Create(notes.CreateOptions{
+		Kind: "ticket", Title: "auth bug needs fixing", Type: "task",
+		Tags: []string{"auth", "backend"},
+		Body: "The token refresh has a race condition.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.List(notes.ListOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Search("auth", notes.SearchOptions{Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Delete the full cache only, leaving summary + textindex in place.
+	home, _ := os.UserHomeDir()
+	sum := sha256.Sum256([]byte(dir))
+	hash := fmt.Sprintf("%x", sum[:8])
+	repoCacheDir := filepath.Join(home, ".maitake", "cache", hash)
+	entries, _ := os.ReadDir(repoCacheDir)
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".json") &&
+			!strings.HasSuffix(name, ".summary.json") {
+			if err := os.Remove(filepath.Join(repoCacheDir, name)); err != nil {
+				t.Fatalf("remove full cache: %v", err)
+			}
+		}
+	}
+
+	// Fresh engine — summary + textindex are on disk, full cache is gone.
+	// Search must still succeed via the fast path.
+	engine2, err := notes.NewEngine(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := engine2.Search("auth", notes.SearchOptions{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("fast-path search returned no results")
+	}
+	if results[0].State == nil {
+		t.Fatal("fast-path result has nil State — summary hydration failed")
+	}
+	if results[0].State.Title == "" {
+		t.Fatal("fast-path result has empty title — summary hydration incomplete")
+	}
+}

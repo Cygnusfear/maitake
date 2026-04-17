@@ -231,3 +231,29 @@ func TestBenchmarkBaseline(t *testing.T) {
 	resolveTime := time.Since(start)
 	t.Logf("ResolveID x10000: %v (avg %v)", resolveTime, resolveTime/10000)
 }
+
+
+// BenchmarkSearch_Corpus measures end-to-end Search latency across a synthetic
+// 1000-note corpus. Used to regress-protect the persisted text-index fast path.
+func BenchmarkSearch_Corpus(b *testing.B) {
+	idx := NewIndex()
+	for i := 0; i < 1000; i++ {
+		idx.Ingest(&Note{
+			ID:        fmt.Sprintf("t-%04d", i),
+			Kind:      "ticket",
+			Title:     fmt.Sprintf("ticket %d about auth and rate limiting", i),
+			Body:      fmt.Sprintf("body %d describing the issue in detail", i),
+			Tags:      []string{"auth", "perf"},
+			Timestamp: "2026-04-10T10:00:00Z",
+			TargetOID: fmt.Sprintf("oid-%04d", i),
+		})
+	}
+	idx.Build()
+	ti := &TextIndex{}
+	ti.build(idx.States)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ti.Search("auth rate", 10)
+	}
+}

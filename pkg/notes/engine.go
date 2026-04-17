@@ -553,13 +553,54 @@ func (e *RealEngine) List(opts ListOptions) ([]StateSummary, error) {
 }
 
 // Search performs BM25 full-text search across all notes.
+//
+// Fast path: if a persisted text-index cache exists for the current ref tip
+// and the summary cache (carrying lightweight states for filter + display)
+// is also present, reconstruct the TextIndex without touching the 200MB+
+// full cache. Falls back to a full rebuild on miss; the rebuild's text
+// index is then persisted for the next invocation.
 func (e *RealEngine) Search(query string, opts SearchOptions) ([]SearchResult, error) {
+	if !e.indexReady && !e.indexDirty {
+		if ti := e.loadTextIndexFromCache(); ti != nil {
+			return ti.SearchFiltered(query, opts), nil
+		}
+	}
 	e.ensureIndex()
 	if e.index.Text == nil {
 		e.index.Text = &TextIndex{}
 		e.index.Text.build(e.index.States)
+		// Persist for the next CLI invocation on this ref tip.
+		if tipOID := refTipOID(e.repo, e.activeRef()); tipOID != "" {
+			writeTextIndexCache(e.repoPath, tipOID, e.index.Text)
+		}
 	}
 	return e.index.Text.SearchFiltered(query, opts), nil
+}
+
+// loadTextIndexFromCache tries the persisted text-index + summary-cache fast
+// path. Returns nil on any miss so the caller falls back to ensureIndex.
+func (e *RealEngine) loadTextIndexFromCache() *TextIndex {
+	tipOID := refTipOID(e.repo, e.activeRef())
+	if tipOID == "" {
+		return nil
+	}
+	env := loadTextIndexCache(e.repoPath, tipOID)
+	if env == nil {
+		return nil
+	}
+	summary := loadSummaryCache(e.repoPath, tipOID)
+	if summary == nil {
+		return nil
+	}
+	byID := make(map[string]*State, len(summary.Entries))
+	for _, entry := range summary.Entries {
+		byID[entry.Summary.ID] = stateFromSummary(entry.Summary)
+	}
+	ti := &TextIndex{}
+	ti.hydrateFromCache(env, func(id string) *State {
+		return byID[id]
+	})
+	return ti
 }
 
 // Refs returns all notes with edges pointing at a target (reverse lookup).

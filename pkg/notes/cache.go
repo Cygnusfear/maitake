@@ -306,19 +306,26 @@ func resolveSummaryEntry(entries []summaryCacheEntry, partial string) (*summaryC
 	}
 }
 
-// pruneCache removes old cache files, keeping only the N most recent.
+// pruneCache keeps the N most recent ref tips and removes all cache files
+// for older tips. A single tip can produce multiple files (.json for the full
+// note cache, .summary.json for the summary fast path, .textindex.json for
+// the persisted BM25 index) — pruning by file count alone would silently
+// orphan summaries or text indices of the current tip. Pruning by tip keeps
+// every companion file for the N most recent tips and drops the rest.
 func pruneCache(dir string, keep int) {
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) <= keep {
+	if err != nil {
 		return
 	}
 
 	type fileInfo struct {
 		name    string
+		tip     string
 		modTime int64
 	}
 
 	var files []fileInfo
+	tipMTime := map[string]int64{}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -327,18 +334,53 @@ func pruneCache(dir string, keep int) {
 		if err != nil {
 			continue
 		}
-		files = append(files, fileInfo{name: e.Name(), modTime: info.ModTime().UnixNano()})
+		tip := tipFromCacheFileName(e.Name())
+		if tip == "" {
+			continue
+		}
+		mt := info.ModTime().UnixNano()
+		files = append(files, fileInfo{name: e.Name(), tip: tip, modTime: mt})
+		if mt > tipMTime[tip] {
+			tipMTime[tip] = mt
+		}
 	}
 
-	// Sort newest first
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].modTime > files[j].modTime
+	if len(tipMTime) <= keep {
+		return
+	}
+
+	// Rank tips newest first by their most recent file mtime.
+	tips := make([]string, 0, len(tipMTime))
+	for t := range tipMTime {
+		tips = append(tips, t)
+	}
+	sort.Slice(tips, func(a, b int) bool {
+		return tipMTime[tips[a]] > tipMTime[tips[b]]
 	})
 
-	// Remove old ones
-	for i := keep; i < len(files); i++ {
-		os.Remove(filepath.Join(dir, files[i].name))
+	keepSet := make(map[string]struct{}, keep)
+	for i := 0; i < keep && i < len(tips); i++ {
+		keepSet[tips[i]] = struct{}{}
 	}
+
+	for _, f := range files {
+		if _, ok := keepSet[f.tip]; ok {
+			continue
+		}
+		os.Remove(filepath.Join(dir, f.name))
+	}
+}
+
+// tipFromCacheFileName strips the known cache suffixes to recover the ref
+// tip OID that keys all three companion files. Returns "" for anything that
+// doesn't look like a cache file.
+func tipFromCacheFileName(name string) string {
+	for _, suffix := range []string{".textindex.gob", ".summary.json", ".json"} {
+		if strings.HasSuffix(name, suffix) {
+			return strings.TrimSuffix(name, suffix)
+		}
+	}
+	return ""
 }
 
 // pruneStaleRepoCachesMaxAge is how long a repo cache dir can be untouched
