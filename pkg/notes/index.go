@@ -22,10 +22,12 @@ type Index struct {
 	States map[string]*State
 
 	// Lookup maps
-	ByKind   map[string][]string // kind → note IDs
-	ByTarget map[string][]string // file path → note IDs
-	ByStatus map[string][]string // status → note IDs
-	ByTag    map[string][]string // tag → note IDs
+	ByKind         map[string][]string // kind → note IDs
+	ByTarget       map[string][]string // file path → note IDs
+	ByStatus       map[string][]string // status → note IDs
+	ByTag          map[string][]string // tag → note IDs
+	ByLocationPath map[string][]string // comment location path → note IDs
+	AllIDs         []string            // cached creation note IDs for query scans
 
 	// Full-text search index
 	Text *TextIndex
@@ -45,6 +47,7 @@ func NewIndex() *Index {
 		ByTarget:       make(map[string][]string),
 		ByStatus:       make(map[string][]string),
 		ByTag:          make(map[string][]string),
+		ByLocationPath: make(map[string][]string),
 		BuiltAt:        time.Now(),
 	}
 }
@@ -80,11 +83,17 @@ func (idx *Index) Build() {
 	idx.ByTarget = make(map[string][]string)
 	idx.ByStatus = make(map[string][]string)
 	idx.ByTag = make(map[string][]string)
+	idx.ByLocationPath = make(map[string][]string)
+	idx.AllIDs = idx.AllIDs[:0]
 
 	for id, creation := range idx.CreationNotes {
 		events := idx.EventsByTarget[id]
-		state := FoldEvents(creation, events)
+		sort.Slice(events, func(i, j int) bool {
+			return events[i].Time.Before(events[j].Time)
+		})
+		state := foldEventsSorted(creation, events)
 		idx.States[id] = state
+		idx.AllIDs = append(idx.AllIDs, id)
 
 		// Populate lookup maps
 		idx.ByKind[state.Kind] = append(idx.ByKind[state.Kind], id)
@@ -95,11 +104,15 @@ func (idx *Index) Build() {
 		for _, tag := range state.Tags {
 			idx.ByTag[tag] = append(idx.ByTag[tag], id)
 		}
+		for _, c := range state.Comments {
+			if c.Location != nil && c.Location.Path != "" {
+				idx.ByLocationPath[c.Location.Path] = append(idx.ByLocationPath[c.Location.Path], id)
+			}
+		}
 	}
 
-	// Build full-text search index
-	idx.Text = &TextIndex{}
-	idx.Text.build(idx.States)
+	// Full-text index builds lazily on first search.
+	idx.Text = nil
 
 	idx.BuiltAt = time.Now()
 }
@@ -126,23 +139,12 @@ func (idx *Index) FindByTag(tag string) []string {
 
 // Query returns states matching the given filters.
 func (idx *Index) Query(opts FindOptions) []*State {
-	// Start with all IDs, then intersect with each filter
-	candidates := idx.allIDs()
-
-	if opts.Kind != "" {
-		candidates = intersect(candidates, idx.ByKind[opts.Kind])
-	}
-	if opts.Status != "" && opts.Status != "all" {
-		candidates = intersect(candidates, idx.ByStatus[opts.Status])
-	}
-	if opts.Tag != "" {
-		candidates = intersect(candidates, idx.ByTag[opts.Tag])
-	}
-	if opts.Target != "" {
-		candidates = intersect(candidates, idx.ByTarget[opts.Target])
+	candidates := idx.AllIDs
+	if subset := idx.smallestCandidateSet(opts); subset != nil {
+		candidates = subset
 	}
 
-	var results []*State
+	results := make([]*State, 0, len(candidates))
 	for _, id := range candidates {
 		state := idx.States[id]
 		if state == nil {
@@ -152,6 +154,18 @@ func (idx *Index) Query(opts FindOptions) []*State {
 			continue
 		}
 		if opts.Assignee != "" && state.Assignee != opts.Assignee {
+			continue
+		}
+		if opts.Kind != "" && state.Kind != opts.Kind {
+			continue
+		}
+		if opts.Status != "" && opts.Status != "all" && state.Status != opts.Status {
+			continue
+		}
+		if opts.Tag != "" && !contains(state.Tags, opts.Tag) {
+			continue
+		}
+		if opts.Target != "" && !contains(state.Targets, opts.Target) {
 			continue
 		}
 		results = append(results, state)
@@ -197,7 +211,7 @@ func (idx *Index) QueryList(opts ListOptions) []StateSummary {
 // even if the note itself targets a different (or no) file.
 func (idx *Index) ContextForPath(path string) []*State {
 	seen := make(map[string]bool)
-	var results []*State
+	results := make([]*State, 0, len(idx.ByTarget[path])+len(idx.ByLocationPath[path]))
 
 	// Notes directly targeting this path
 	for _, id := range idx.ByTarget[path] {
@@ -209,11 +223,9 @@ func (idx *Index) ContextForPath(path string) []*State {
 	}
 
 	// Notes with file-located comments on this path
-	for id, state := range idx.States {
-		if seen[id] || state.Status == "closed" {
-			continue
-		}
-		if stateHasLocationOnPath(state, path) {
+	for _, id := range idx.ByLocationPath[path] {
+		state := idx.States[id]
+		if state != nil && state.Status != "closed" && !seen[id] {
 			seen[id] = true
 			results = append(results, state)
 		}
@@ -225,7 +237,7 @@ func (idx *Index) ContextForPath(path string) []*State {
 // ContextAllForPath returns all states targeting the given file path (open + closed).
 func (idx *Index) ContextAllForPath(path string) []*State {
 	seen := make(map[string]bool)
-	var results []*State
+	results := make([]*State, 0, len(idx.ByTarget[path])+len(idx.ByLocationPath[path]))
 
 	for _, id := range idx.ByTarget[path] {
 		if state := idx.States[id]; state != nil && !seen[id] {
@@ -234,11 +246,8 @@ func (idx *Index) ContextAllForPath(path string) []*State {
 		}
 	}
 
-	for id, state := range idx.States {
-		if seen[id] {
-			continue
-		}
-		if stateHasLocationOnPath(state, path) {
+	for _, id := range idx.ByLocationPath[path] {
+		if state := idx.States[id]; state != nil && !seen[id] {
 			seen[id] = true
 			results = append(results, state)
 		}
@@ -308,26 +317,31 @@ func (idx *Index) KindCounts() []KindCount {
 
 // helpers
 
-func (idx *Index) allIDs() []string {
-	ids := make([]string, 0, len(idx.CreationNotes))
-	for id := range idx.CreationNotes {
-		ids = append(ids, id)
+func (idx *Index) smallestCandidateSet(opts FindOptions) []string {
+	var best []string
+	if opts.Kind != "" {
+		best = idx.ByKind[opts.Kind]
 	}
-	return ids
+	if opts.Status != "" && opts.Status != "all" {
+		best = smallerIDs(best, idx.ByStatus[opts.Status])
+	}
+	if opts.Tag != "" {
+		best = smallerIDs(best, idx.ByTag[opts.Tag])
+	}
+	if opts.Target != "" {
+		best = smallerIDs(best, idx.ByTarget[opts.Target])
+	}
+	return best
 }
 
-func intersect(a, b []string) []string {
-	set := make(map[string]bool, len(b))
-	for _, s := range b {
-		set[s] = true
+func smallerIDs(current, candidate []string) []string {
+	if candidate == nil {
+		return candidate
 	}
-	var result []string
-	for _, s := range a {
-		if set[s] {
-			result = append(result, s)
-		}
+	if current == nil || len(candidate) < len(current) {
+		return candidate
 	}
-	return result
+	return current
 }
 
 // noteTargetID extracts the target note ID from an event/comment's edges.

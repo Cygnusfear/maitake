@@ -10,6 +10,20 @@ import (
 // Events are applied in timestamp order. Scalars use last-writer-wins.
 // Collections use set operations (+add, -remove) applied in order.
 func FoldEvents(creation *Note, events []*Note) *State {
+	if len(events) == 0 {
+		return foldEventsSorted(creation, events)
+	}
+
+	sorted := make([]*Note, len(events))
+	copy(sorted, events)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Time.Before(sorted[j].Time)
+	})
+
+	return foldEventsSorted(creation, sorted)
+}
+
+func foldEventsSorted(creation *Note, events []*Note) *State {
 	state := &State{
 		ID:        creation.ID,
 		Kind:      creation.Kind,
@@ -53,15 +67,8 @@ func FoldEvents(creation *Note, events []*Note) *State {
 		}
 	}
 
-	// Sort events by timestamp
-	sorted := make([]*Note, len(events))
-	copy(sorted, events)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Time.Before(sorted[j].Time)
-	})
-
 	// Apply events
-	for _, ev := range sorted {
+	for _, ev := range events {
 		switch ev.Kind {
 		case "event":
 			// Check if this body edit targets a comment rather than the parent
