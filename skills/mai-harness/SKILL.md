@@ -56,6 +56,20 @@ Promote chat knowledge into the repo when any of these hold:
 
 If none hold, do not create a note. Density matters — one strong note beats five vague ones.
 
+### Quote the human exactly when the wording matters
+
+If the human states a requirement, constraint, objection, or new UOW in a way that
+implementation or review must honor literally, preserve the exact text in `mai`.
+
+Do this when the wording itself is the contract, for example:
+- "this is the next UOW"
+- "do not frame this as X"
+- "logs **and** traces"
+- "matching by string is banned"
+
+Interpretation can sit below the quote, but the quote comes first. Do not replace
+the contract with a paraphrase if future agents need the original wording.
+
 ## Kind-selection guide
 
 | The chat said... | Use |
@@ -75,6 +89,12 @@ Apply in order.
 ### 1. Identify durable knowledge
 
 Walk the current conversation and list what survives chat loss. Focus on rules, rationale, hazards, and truth markers.
+
+For incident/debugging work, capture four buckets explicitly:
+- **Observed symptom** — what happened in runtime/user terms
+- **Ruled out** — what is no longer the problem
+- **Confirmed cause** — what evidence actually proved
+- **Follow-on obligation** — tests, traces, performance, or deployment work that must accompany the fix
 
 ### 2. Choose the right kind
 
@@ -187,6 +207,9 @@ See `references/templates.md` for a template hook.
 | Targetless rule that should be file-scoped | Add `--target` |
 | Verification that only checks file existence | Check behavior too |
 | Five vague notes where one strong note fits | Delete four, strengthen one |
+| Human said something contract-shaping, but only the paraphrase was stored | Store the exact quote, then interpret beneath it |
+| Incident ticket records only the guessed cause | Record symptom, ruled-out paths, confirmed cause, and remaining obligations separately |
+| Functional fix lands without the promised regression/observability follow-up | Create the follow-on ticket/ADR immediately and link it from the fix ticket |
 | Note density so high nobody reads mai context | Prune aggressively |
 | Hook in `.maitake/` but no installer in VCS | Ship the installer, not the live dir |
 
@@ -203,10 +226,12 @@ When something changes, update in this order:
 ## Quick-start checklist
 
 - [ ] list what the chat knows that the repo does not
+- [ ] preserve exact human wording when it is the contract
 - [ ] create project-wide constraints for discipline rules
 - [ ] ADR every non-obvious choice
 - [ ] warn every fragile area
 - [ ] artifact every research / audit / plan
+- [ ] for incidents, record symptom / ruled-out / confirmed cause / remaining obligations
 - [ ] add arrival ritual to root `AGENTS.md`
 - [ ] add delegation template to root `AGENTS.md`
 - [ ] banner each meaningful directory's `AGENTS.md`
