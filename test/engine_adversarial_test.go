@@ -755,6 +755,92 @@ func TestEngineAdversarial(t *testing.T) {
 		})
 	})
 
+	t.Run("batch mode suppresses async rebuild — mai-jq29", func(t *testing.T) {
+		// Regression for mai-jq29: scheduleAsyncRebuild used to fire during
+		// BeginBatch, racing with in-flight Create/Append by mutating e.index
+		// in one goroutine while summaryEntriesFromIndex iterated it in another.
+		// Symptom: "fatal error: concurrent map iteration and map write" inside
+		// summaryEntriesFromIndex during long migrate runs.
+		//
+		// The fix: scheduleAsyncRebuild is a no-op when e.batching is true.
+		// EndBatch() owns the single Build() at batch close.
+		//
+		// This test exercises the exact shape of the migrate workload:
+		//   BeginBatch -> N create+append pairs spaced past indexRebuildDelay
+		//   -> EndBatch -> verify all notes survived and are resolvable.
+		//
+		// Run under `go test -race` to catch the regression deterministically:
+		// without the fix, the timer goroutine fires `Rebuild` during batch and
+		// the race detector flags concurrent writes to e.indexDirty (engine.go
+		// scheduleAsyncRebuild.func1 vs Create's e.indexDirty = true). Without
+		// -race the symptom is the production "concurrent map iteration and
+		// map write" fatal in summaryEntriesFromIndex once the same race trips
+		// over a map iteration boundary. Either witness counts.
+		_, engine := setupEngine(t)
+		engine.BeginBatch()
+
+		const n = 200
+		ids := make([]string, 0, n)
+
+		for i := 0; i < n; i++ {
+			note, err := engine.Create(notes.CreateOptions{
+				Kind:  "artifact",
+				Type:  "artifact",
+				Title: fmt.Sprintf("batch-entry-%04d", i),
+				Body:  fmt.Sprintf("body for batch entry %04d", i),
+				Tags:  []string{"changelog", "fix"},
+			})
+			if err != nil {
+				t.Fatalf("Create(%d) under batch failed: %v", i, err)
+			}
+			if _, err := engine.Append(notes.AppendOptions{
+				TargetID: note.ID,
+				Kind:     "event",
+				Field:    "status",
+				Value:    "closed",
+			}); err != nil {
+				t.Fatalf("Append(%d) close under batch failed: %v", i, err)
+			}
+			ids = append(ids, note.ID)
+
+			// At i = halfway, sleep well past the debounce delay. Pre-fix this is
+			// when the async rebuild goroutine fired and raced with the next
+			// iteration's Ingest. Post-fix the timer was never armed.
+			if i == n/2 {
+				time.Sleep(750 * time.Millisecond)
+			}
+		}
+
+		engine.EndBatch()
+
+		// All notes survived and fold to the expected closed state.
+		for i, id := range ids {
+			state, err := engine.Fold(id)
+			if err != nil {
+				t.Fatalf("Fold(%q) after EndBatch failed (i=%d): %v", id, i, err)
+			}
+			if state.Status != "closed" {
+				t.Fatalf("note %q status=%q after batch close, want closed", id, state.Status)
+			}
+		}
+
+		// And they are findable through the changelog tag (the actual mai-changelog query).
+		// Tolerate the known 4-char-random-suffix GenerateID collision documented
+		// in "create 1000 notes rapidly with unique ids and foldable state" above.
+		uniqueIDs := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			uniqueIDs[id] = struct{}{}
+		}
+		states, err := engine.Find(notes.FindOptions{Kind: "artifact", Tag: "changelog"})
+		if err != nil {
+			t.Fatalf("Find changelog artifacts after batch: %v", err)
+		}
+		if len(states) != len(uniqueIDs) {
+			t.Fatalf("found %d changelog artifacts, want %d (unique IDs from %d Create calls)",
+				len(states), len(uniqueIDs), n)
+		}
+	})
+
 	t.Run("crdt and ydoc wiring", func(t *testing.T) {
 		_, engine := setupEngine(t)
 		docs.RegisterAutoSync(engine)

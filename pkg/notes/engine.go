@@ -179,8 +179,22 @@ func (e *RealEngine) loadNoteFromSummaryCache(id string) (*Note, *State, error) 
 // Rapid creates (e.g. teams delegate 3 workers) coalesce into one rebuild.
 // CLI: the process exits before the timer fires — the next invocation lazy-loads.
 // In-process: if a read happens before the timer, ensureIndex sees dirty and rebuilds sync.
+//
+// In batch mode, the async rebuild is suppressed entirely. EndBatch() handles
+// the single Build() at batch close, and the async path would otherwise race
+// with in-flight Append/Create calls: Rebuild() swaps e.index to a freshly
+// loaded idx and then iterates idx.States via summaryEntriesFromIndex, while
+// the main goroutine continues to mutate that same map via Ingest. The Go
+// runtime catches this as "concurrent map iteration and map write" and aborts
+// the process. See mai-jq29.
 func (e *RealEngine) scheduleAsyncRebuild(ref git.NotesRef) {
 	e.indexDirty = true
+
+	// In batch mode, EndBatch() owns the rebuild. Skip the async path entirely
+	// to avoid racing with in-flight Append/Create calls.
+	if e.batching {
+		return
+	}
 
 	e.indexRebuildMu.Lock()
 	defer e.indexRebuildMu.Unlock()
@@ -193,6 +207,12 @@ func (e *RealEngine) scheduleAsyncRebuild(ref git.NotesRef) {
 		e.indexRebuildMu.Lock()
 		e.indexRebuildTimer = nil
 		e.indexRebuildMu.Unlock()
+
+		// Re-check batching at fire time: a caller may have entered batch mode
+		// after scheduling but before the timer fired. Same race protection.
+		if e.batching {
+			return
+		}
 
 		_ = e.Rebuild()
 		e.indexReady = true
