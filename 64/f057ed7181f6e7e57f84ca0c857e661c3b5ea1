@@ -1,0 +1,43 @@
+pkg/notes/engine.go
+  s_c9c56245c75a5d::t_f43c1083a1e6dc 297,432
+pkg/notes/author.go
+  s_c9c56245c75a5d::t_adcba3b99532d5 1-38
+pkg/git/git_adversarial_test.go
+  s_c9c56245c75a5d::t_4419e790cfc993 364-375
+test/cli_test.go
+  s_c9c56245c75a5d::t_4419e790cfc993 773-785
+pkg/notes/fold.go
+  s_c9c56245c75a5d::t_63bb79d00bb8fa 38-43,235-248
+pkg/git/git.go
+  s_c9c56245c75a5d::t_63bb79d00bb8fa 158-162
+pkg/notes/types.go
+  s_c9c56245c75a5d::t_63bb79d00bb8fa 43-46,90-115,120-133
+pkg/notes/parse_test.go
+  s_c9c56245c75a5d::t_4f84f8cfdd1d77 243-245,288-292
+pkg/notes/textindex_cache.go
+  s_c9c56245c75a5d::t_63bb79d00bb8fa 154-155
+pkg/git/mock_repo.go
+  s_c9c56245c75a5d::t_63bb79d00bb8fa 197-199
+cmd/mai/render.go
+  s_c9c56245c75a5d::t_4f84f8cfdd1d77 31-37
+pkg/notes/fold_test.go
+  s_c9c56245c75a5d::t_4f84f8cfdd1d77 358-373
+pkg/git/repo.go
+  s_c9c56245c75a5d::t_63bb79d00bb8fa 151-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "64f057ed7181f6e7e57f84ca0c857e661c3b5ea1",
+  "prompts": {},
+  "sessions": {
+    "s_c9c56245c75a5d": {
+      "agent_id": {
+        "tool": "Matias Magnetar Wechsler",
+        "id": "019dff96-fd58-77ae-9efd-00187ec2bc46",
+        "model": "openai-codex/gpt-5.5"
+      },
+      "human_author": "Alexander Mangel <cygnusfear@gmail.com>"
+    }
+  }
+}
