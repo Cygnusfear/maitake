@@ -293,6 +293,7 @@ func registerRepo(repoPath string) {
 // Worktrees have a .git file containing "gitdir: /path/to/main/.git/worktrees/name".
 // If it's already a main repo (has .git dir), returns the path unchanged.
 func resolveMainRepo(repoPath string) string {
+	repoPath = canonicalRepoPath(repoPath)
 	dotGit := filepath.Join(repoPath, ".git")
 	info, err := os.Stat(dotGit)
 	if err != nil {
@@ -315,9 +316,17 @@ func resolveMainRepo(repoPath string) string {
 	// Walk up from .git/worktrees/name to find the main repo
 	// The main .git dir is the parent of "worktrees/"
 	if idx := strings.Index(gitDir, "/.git/worktrees/"); idx >= 0 {
-		return gitDir[:idx]
+		return canonicalRepoPath(gitDir[:idx])
 	}
 	return repoPath
+}
+
+func canonicalRepoPath(repoPath string) string {
+	resolved, err := filepath.EvalSymlinks(repoPath)
+	if err == nil {
+		return resolved
+	}
+	return filepath.Clean(repoPath)
 }
 
 func fatal(format string, args ...any) {
@@ -428,25 +437,55 @@ func parseFlags(args []string) (flagSet, []string) {
 		case "-h", "--help":
 			f.help = true
 		case "--limit":
-			i++; if i < len(args) { fmt.Sscanf(args[i], "%d", &f.limit) }
+			i++
+			if i < len(args) {
+				fmt.Sscanf(args[i], "%d", &f.limit)
+			}
 		case "-k", "--kind":
-			i++; if i < len(args) { f.kind = args[i] }
+			i++
+			if i < len(args) {
+				f.kind = args[i]
+			}
 		case "-t", "--title":
-			i++; if i < len(args) { f.title = args[i] }
+			i++
+			if i < len(args) {
+				f.title = args[i]
+			}
 		case "--type":
-			i++; if i < len(args) { f.typ = args[i] }
+			i++
+			if i < len(args) {
+				f.typ = args[i]
+			}
 		case "-p", "--priority":
-			i++; if i < len(args) { fmt.Sscanf(args[i], "%d", &f.priority) }
+			i++
+			if i < len(args) {
+				fmt.Sscanf(args[i], "%d", &f.priority)
+			}
 		case "-a", "--assignee":
-			i++; if i < len(args) { f.assignee = args[i] }
+			i++
+			if i < len(args) {
+				f.assignee = args[i]
+			}
 		case "-l", "--tags":
-			i++; if i < len(args) { f.tags = strings.Split(args[i], ",") }
+			i++
+			if i < len(args) {
+				f.tags = strings.Split(args[i], ",")
+			}
 		case "--target":
-			i++; if i < len(args) { f.targets = append(f.targets, args[i]) }
+			i++
+			if i < len(args) {
+				f.targets = append(f.targets, args[i])
+			}
 		case "-d", "--description", "-m", "--message":
-			i++; if i < len(args) { f.body = args[i] }
+			i++
+			if i < len(args) {
+				f.body = args[i]
+			}
 		case "--status":
-			i++; if i < len(args) { f.status = args[i] }
+			i++
+			if i < len(args) {
+				f.status = args[i]
+			}
 		default:
 			if strings.HasPrefix(args[i], "--status=") {
 				f.status = strings.TrimPrefix(args[i], "--status=")

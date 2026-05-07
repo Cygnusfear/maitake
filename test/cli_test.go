@@ -17,17 +17,40 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	maiBinary = filepath.Join(tmp, "mai")
+	configureHermeticGitEnv(tmp)
+	os.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	build := exec.Command("go", "build", "-o", maiBinary, "./cmd/mai/")
-	build.Dir = filepath.Join(mustGetwd(), "..")
-	if out, err := build.CombinedOutput(); err != nil {
-		panic("building mai: " + err.Error() + "\n" + string(out))
+	for _, bin := range []string{"mai", "mai-pr", "mai-docs", "mai-changelog"} {
+		outPath := filepath.Join(tmp, bin)
+		if bin == "mai" {
+			maiBinary = outPath
+		}
+		build := exec.Command("go", "build", "-o", outPath, "./cmd/"+bin+"/")
+		build.Dir = filepath.Join(mustGetwd(), "..")
+		if out, err := build.CombinedOutput(); err != nil {
+			panic("building " + bin + ": " + err.Error() + "\n" + string(out))
+		}
 	}
 
 	code := m.Run()
 	os.RemoveAll(tmp)
 	os.Exit(code)
+}
+
+func configureHermeticGitEnv(tmp string) {
+	home := filepath.Join(tmp, "home")
+	os.MkdirAll(filepath.Join(home, ".config"), 0755)
+	maitakeDir := filepath.Join(home, ".maitake")
+	os.MkdirAll(maitakeDir, 0755)
+	os.WriteFile(filepath.Join(maitakeDir, "plugins.toml"), []byte("[plugins]\npr = \"mai-pr\"\ndocs = \"mai-docs\"\nchangelog = \"mai-changelog\"\n"), 0644)
+	os.Setenv("HOME", home)
+	os.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	os.Setenv("GIT_CONFIG_COUNT", "0")
+	os.Unsetenv("GIT_TRACE")
+	os.Unsetenv("GIT_TRACE2")
+	os.Unsetenv("GIT_TRACE2_EVENT")
 }
 
 func mustGetwd() string {

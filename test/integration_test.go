@@ -45,7 +45,20 @@ func setupRepo(t *testing.T) string {
 	run("add", "-A")
 	run("commit", "-m", "init")
 
+	writeTestDocsConfig(t, dir)
 	return dir
+}
+
+func writeTestDocsConfig(t *testing.T, dir string) {
+	t.Helper()
+	maitakeDir := filepath.Join(dir, ".maitake")
+	if err := os.MkdirAll(maitakeDir, 0755); err != nil {
+		t.Fatalf("create .maitake dir: %v", err)
+	}
+	cfg := []byte("[docs]\nsync = \"auto\"\ndir = \"docs\"\nwatch = true\n")
+	if err := os.WriteFile(filepath.Join(maitakeDir, "config.toml"), cfg, 0644); err != nil {
+		t.Fatalf("write docs config: %v", err)
+	}
 }
 
 func TestEngine_CreateAndFold(t *testing.T) {
@@ -310,7 +323,6 @@ func TestEngine_PersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-
 // TestSummaryCacheSelfHeal ensures that when the full cache exists for a ref tip
 // but the summary cache does not, the next engine invocation rebuilds the summary
 // cache as a side-effect of Rebuild's cache-hit branch. This regresses the
@@ -391,7 +403,6 @@ func TestSummaryCacheSelfHeal(t *testing.T) {
 	}
 }
 
-
 // TestUpdateCacheWritesSummary ensures that a write (which triggers
 // scheduleAsyncRebuild -> eventually updateCache) results in both the full
 // cache AND the summary cache being written for the new ref tip. This
@@ -471,7 +482,6 @@ func TestUpdateCacheWritesSummary(t *testing.T) {
 		}
 	}
 }
-
 
 // TestSearchPersistsTextIndex ensures the first search after a rebuild writes
 // a .textindex.json companion file, and that a subsequent engine invocation

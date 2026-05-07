@@ -10,6 +10,29 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	// Keep integration repos hermetic. The parent developer environment may
+	// inject git hooks or trace2 listeners via global / command-line git config;
+	// those hooks can write refs/notes/ai into short-lived temp repos after a
+	// test has finished, racing t.TempDir cleanup.
+	home, err := os.MkdirTemp("", "maitake-git-test-home-*")
+	if err != nil {
+		os.Exit(1)
+	}
+	os.Setenv("HOME", home)
+	os.Setenv("XDG_CONFIG_HOME", home+"/.config")
+	os.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	os.Setenv("GIT_CONFIG_COUNT", "0")
+	os.Unsetenv("GIT_TRACE")
+	os.Unsetenv("GIT_TRACE2")
+	os.Unsetenv("GIT_TRACE2_EVENT")
+
+	code := m.Run()
+	os.RemoveAll(home)
+	os.Exit(code)
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------

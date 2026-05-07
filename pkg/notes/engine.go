@@ -246,6 +246,20 @@ func (e *RealEngine) docOwnerForPath(path string) string {
 	return ""
 }
 
+func (e *RealEngine) generateUniqueID() (string, error) {
+	const attempts = 32
+	for i := 0; i < attempts; i++ {
+		id, err := GenerateID(e.repoPath)
+		if err != nil {
+			return "", fmt.Errorf("generating ID: %w", err)
+		}
+		if e.index.CreationNotes[id] == nil {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("generating ID: exhausted %d attempts without a unique ID", attempts)
+}
+
 // Create writes a new creation note with a generated ID.
 func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	if opts.Kind == "" {
@@ -255,9 +269,9 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 	id := opts.ID
 	if id == "" {
 		var err error
-		id, err = GenerateID(e.repoPath)
+		id, err = e.generateUniqueID()
 		if err != nil {
-			return nil, fmt.Errorf("generating ID: %w", err)
+			return nil, err
 		}
 	}
 

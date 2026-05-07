@@ -10,8 +10,8 @@ func TestGenerateID_Format(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Should be prefix-XXXX where prefix is from dir name segments
-	matched, _ := regexp.MatchString(`^[a-z]+-[a-z0-9]{4}$`, id)
+	// Should be prefix-XXXXXXXX where prefix is from dir name segments
+	matched, _ := regexp.MatchString(`^[a-z]+-[a-z0-9]{8}$`, id)
 	if !matched {
 		t.Errorf("ID %q doesn't match expected format", id)
 	}

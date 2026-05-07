@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// GenerateID creates a human-readable ID from the directory name + 4 random alphanumeric chars.
+// GenerateID creates a human-readable ID from the directory name + 8 random alphanumeric chars.
 // The prefix is built from the first letter of each hyphen/underscore-separated segment.
 func GenerateID(dir string) (string, error) {
 	dirName := filepath.Base(dir)
@@ -32,7 +32,7 @@ func GenerateID(dir string) (string, error) {
 		}
 	}
 
-	suffix, err := randomAlphanumeric(4)
+	suffix, err := randomAlphanumeric(8)
 	if err != nil {
 		return "", fmt.Errorf("generating ID suffix: %w", err)
 	}

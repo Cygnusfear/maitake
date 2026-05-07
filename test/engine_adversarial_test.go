@@ -126,10 +126,8 @@ func TestEngineAdversarial(t *testing.T) {
 				ids[note.ID] = struct{}{}
 			}
 
-			// BUG: GenerateID uses a 4-character random suffix, so 1000 rapid creates can collide.
-			// Keep the stress test focused on survivability and foldability of what was created.
 			if duplicates > 0 {
-				t.Logf("BUG: saw %d duplicate generated IDs across 1000 rapid creates", duplicates)
+				t.Fatalf("saw %d duplicate generated IDs across 1000 rapid creates", duplicates)
 			}
 
 			for id := range ids {

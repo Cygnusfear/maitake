@@ -92,8 +92,15 @@ func TestDaemon_WorktreeResolvedToMainRepo(t *testing.T) {
 
 	// Extract main repo path (everything before /.git/worktrees/)
 	idx := strings.Index(gitDir, "/.git/worktrees/")
-	resolved := gitDir[:idx]
-	if resolved != mainDir {
+	resolved, err := filepath.EvalSymlinks(gitDir[:idx])
+	if err != nil {
+		t.Fatalf("resolve gitdir path: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(mainDir)
+	if err != nil {
+		t.Fatalf("resolve main repo path: %v", err)
+	}
+	if resolved != want {
 		t.Errorf("resolved = %q, want main repo %q", resolved, mainDir)
 	}
 }
