@@ -1,0 +1,42 @@
+pkg/notes/engine.go
+  s_c9c56245c75a5d::t_e8bc7f1cb6decc 272,274
+  s_c9c56245c75a5d::t_4b7db1c49bc299 256
+  s_c9c56245c75a5d::t_8e82245b38ee14 249-255,257-262
+pkg/git/git_adversarial_test.go
+  s_c9c56245c75a5d::t_623d3951ace912 13-35
+test/cli_test.go
+  s_c9c56245c75a5d::t_6641ca01134e9b 43-45
+  s_c9c56245c75a5d::t_d75ce88c5520ef 20,40-42,46-53
+  s_c9c56245c75a5d::t_ba81b3554778c3 21,23-32
+test/daemon_regression_test.go
+  s_c9c56245c75a5d::t_69bb1d93f59863 95-103
+pkg/notes/id_test.go
+  s_c9c56245c75a5d::t_81d9063ea5c546 13-14
+test/integration_test.go
+  s_c9c56245c75a5d::t_49f8ebaba72462 48
+  s_c9c56245c75a5d::t_a3f110631fa7b8 52-57,59-63
+  s_c9c56245c75a5d::t_193c14d4048671 58
+cmd/mai/main.go
+  s_c9c56245c75a5d::t_69bb1d93f59863 296,319,324-329
+test/engine_adversarial_test.go
+  s_c9c56245c75a5d::t_5e4e1ed96cabc9 130
+pkg/notes/id.go
+  s_c9c56245c75a5d::t_a90039a5f76d28 10
+  s_c9c56245c75a5d::t_a15003415b2e2e 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "05e5026f1d3ff6ed66c633a6845f9594772298d2",
+  "prompts": {},
+  "sessions": {
+    "s_c9c56245c75a5d": {
+      "agent_id": {
+        "tool": "Matias Magnetar Wechsler",
+        "id": "019dff96-fd58-77ae-9efd-00187ec2bc46",
+        "model": "openai-codex/gpt-5.5"
+      },
+      "human_author": "Alexander Mangel <cygnusfear@gmail.com>"
+    }
+  }
+}
