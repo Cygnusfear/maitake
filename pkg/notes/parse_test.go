@@ -238,9 +238,11 @@ func TestRoundTrip(t *testing.T) {
 		Edges: []Edge{
 			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
-		Body:      "The token refresh has a race condition.",
-		Timestamp: "2026-03-15T14:30:00Z",
-		Branch:    "feature/auth",
+		Body:        "The token refresh has a race condition.",
+		Timestamp:   "2026-03-15T14:30:00Z",
+		Author:      "Env Agent",
+		AuthorEmail: "env-agent@example.com",
+		Branch:      "feature/auth",
 	}
 
 	serialized, err := Serialize(original)
@@ -282,6 +284,12 @@ func TestRoundTrip(t *testing.T) {
 	// Branch round-trips
 	if parsed.Branch != original.Branch {
 		t.Errorf("Branch: %q != %q", parsed.Branch, original.Branch)
+	}
+	if parsed.Author != original.Author {
+		t.Errorf("Author: %q != %q", parsed.Author, original.Author)
+	}
+	if parsed.AuthorEmail != original.AuthorEmail {
+		t.Errorf("AuthorEmail: %q != %q", parsed.AuthorEmail, original.AuthorEmail)
 	}
 }
 

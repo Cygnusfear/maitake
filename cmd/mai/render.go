@@ -28,6 +28,13 @@ func printState(s *notes.State) {
 		fmt.Printf("  assignee: %s", s.Assignee)
 	}
 	fmt.Println()
+	if s.Author != "" {
+		fmt.Printf("author: %s", s.Author)
+		if s.AuthorEmail != "" {
+			fmt.Printf(" <%s>", s.AuthorEmail)
+		}
+		fmt.Println()
+	}
 
 	if len(s.Tags) > 0 {
 		fmt.Printf("tags: %s\n", strings.Join(s.Tags, ", "))

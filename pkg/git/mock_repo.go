@@ -27,11 +27,11 @@ import (
 // We initialize our mock repo with two branches (one of which holds a pending review),
 // and commit history that looks like this:
 //
-//  Master Branch:    A--B--D--E--F--J
-//                     \   /    \  \
-//                       C       \  \
-//                                \  \
-//  Review Branch:                 G--H--I
+//	Master Branch:    A--B--D--E--F--J
+//	                   \   /    \  \
+//	                     C       \  \
+//	                              \  \
+//	Review Branch:                 G--H--I
 //
 // Where commits "B" and "D" represent reviews that have been submitted, and "G"
 // is a pending review.
@@ -193,6 +193,9 @@ func (r *mockRepoForTest) GetRepoStateHash() (string, error) {
 
 // GetUserEmail returns the email address that the user has used to configure git.
 func (r *mockRepoForTest) GetUserEmail() (string, error) { return "user@example.com", nil }
+
+// GetUserName returns the name that the user has configured for git.
+func (r *mockRepoForTest) GetUserName() (string, error) { return "Test User", nil }
 
 // GetUserSigningKey returns the key id the user has configured for
 // sigining git artifacts.

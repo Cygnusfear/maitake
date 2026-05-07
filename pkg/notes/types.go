@@ -8,8 +8,8 @@ import "time"
 // Creation notes have an ID. Events and comments do not.
 type Note struct {
 	// Identity
-	ID   string `json:"id,omitempty"`   // human-readable ID (creation notes only)
-	Kind string `json:"kind"`           // required: "ticket", "warning", "event", "comment", etc.
+	ID   string `json:"id,omitempty"` // human-readable ID (creation notes only)
+	Kind string `json:"kind"`         // required: "ticket", "warning", "event", "comment", etc.
 
 	// Metadata (all optional)
 	Type     string   `json:"type,omitempty"`     // "task", "bug", "feature", "artifact", etc.
@@ -40,9 +40,10 @@ type Note struct {
 	Resolved *bool `json:"resolved,omitempty"`
 
 	// Timestamps
-	Timestamp string `json:"timestamp,omitempty"` // creation/event time (unix or ISO)
-	Author    string `json:"author,omitempty"`
-	Branch    string `json:"branch,omitempty"` // git branch at write time (auto-stamped)
+	Timestamp   string `json:"timestamp,omitempty"` // creation/event time (unix or ISO)
+	Author      string `json:"author,omitempty"`
+	AuthorEmail string `json:"authorEmail,omitempty"`
+	Branch      string `json:"branch,omitempty"` // git branch at write time (auto-stamped)
 
 	// Git metadata (populated on read, not stored in JSON)
 	OID       string `json:"-"`
@@ -86,49 +87,53 @@ type Range struct {
 
 // State is the computed current state of a note after folding all events.
 type State struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Status    string    `json:"status"`
-	Title     string    `json:"title,omitempty"`
-	Type      string    `json:"type,omitempty"`
-	Priority  int       `json:"priority"`
-	Assignee  string    `json:"assignee,omitempty"`
-	Tags      []string  `json:"tags,omitempty"`
-	Body      string    `json:"body,omitempty"`
-	Targets   []string  `json:"targets,omitempty"`
-	Deps      []string  `json:"deps,omitempty"`
-	Links     []string  `json:"links,omitempty"`
-	ParentID  string    `json:"parentId,omitempty"`
-	Events    []Note    `json:"events,omitempty"`
-	Comments  []Note    `json:"comments,omitempty"`
-	Resolved  *bool     `json:"resolved,omitempty"`
-	Edited    bool      `json:"edited,omitempty"`    // true if body was revised
-	Revisions int       `json:"revisions,omitempty"` // number of body edits
-	YDocState    []byte `json:"-"`                   // CRDT state (binary, not in JSON output)
-	LastSyncBody string `json:"-"`                   // body at last successful docs sync (not in JSON)
-	Branch    string    `json:"branch,omitempty"`    // branch at creation time
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	NoteOID   string    `json:"noteOid,omitempty"`
+	ID           string    `json:"id"`
+	Kind         string    `json:"kind"`
+	Status       string    `json:"status"`
+	Title        string    `json:"title,omitempty"`
+	Type         string    `json:"type,omitempty"`
+	Priority     int       `json:"priority"`
+	Assignee     string    `json:"assignee,omitempty"`
+	Tags         []string  `json:"tags,omitempty"`
+	Body         string    `json:"body,omitempty"`
+	Targets      []string  `json:"targets,omitempty"`
+	Deps         []string  `json:"deps,omitempty"`
+	Links        []string  `json:"links,omitempty"`
+	ParentID     string    `json:"parentId,omitempty"`
+	Events       []Note    `json:"events,omitempty"`
+	Comments     []Note    `json:"comments,omitempty"`
+	Resolved     *bool     `json:"resolved,omitempty"`
+	Author       string    `json:"author,omitempty"`
+	AuthorEmail  string    `json:"authorEmail,omitempty"`
+	Edited       bool      `json:"edited,omitempty"`    // true if body was revised
+	Revisions    int       `json:"revisions,omitempty"` // number of body edits
+	YDocState    []byte    `json:"-"`                   // CRDT state (binary, not in JSON output)
+	LastSyncBody string    `json:"-"`                   // body at last successful docs sync (not in JSON)
+	Branch       string    `json:"branch,omitempty"`    // branch at creation time
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+	NoteOID      string    `json:"noteOid,omitempty"`
 }
 
 // StateSummary is a lightweight State for list views.
 type StateSummary struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Status    string    `json:"status"`
-	Type      string    `json:"type,omitempty"`
-	Priority  int       `json:"priority"`
-	Title     string    `json:"title,omitempty"`
-	Tags      []string  `json:"tags,omitempty"`
-	Targets   []string  `json:"targets,omitempty"`
-	Deps      []string  `json:"deps,omitempty"`
-	Links     []string  `json:"links,omitempty"`
-	Assignee  string    `json:"assignee,omitempty"`
-	Resolved  *bool     `json:"resolved,omitempty"`
-	Branch    string    `json:"branch,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          string    `json:"id"`
+	Kind        string    `json:"kind"`
+	Status      string    `json:"status"`
+	Type        string    `json:"type,omitempty"`
+	Priority    int       `json:"priority"`
+	Title       string    `json:"title,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
+	Targets     []string  `json:"targets,omitempty"`
+	Deps        []string  `json:"deps,omitempty"`
+	Links       []string  `json:"links,omitempty"`
+	Assignee    string    `json:"assignee,omitempty"`
+	Resolved    *bool     `json:"resolved,omitempty"`
+	Author      string    `json:"author,omitempty"`
+	AuthorEmail string    `json:"authorEmail,omitempty"`
+	Branch      string    `json:"branch,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // KindCount is a kind with its usage count.
@@ -153,7 +158,7 @@ type DoctorReport struct {
 
 // CreateOptions controls note creation.
 type CreateOptions struct {
-	ID        string    // if set, use this ID instead of generating one
+	ID        string // if set, use this ID instead of generating one
 	Kind      string
 	Title     string
 	Type      string
@@ -161,7 +166,7 @@ type CreateOptions struct {
 	Assignee  string
 	Tags      []string
 	Body      string
-	Targets   []string  // file paths — auto-resolved to edges
+	Targets   []string // file paths — auto-resolved to edges
 	Edges     []Edge
 	Slot      string
 	Timestamp time.Time // if set, use this instead of time.Now()
@@ -169,11 +174,11 @@ type CreateOptions struct {
 
 // AppendOptions controls event/comment appending.
 type AppendOptions struct {
-	TargetID  string    // the note ID this applies to
-	Kind      string    // "event" or "comment"
+	TargetID  string // the note ID this applies to
+	Kind      string // "event" or "comment"
 	Body      string
-	Field     string    // for events: which field changed
-	Value     string    // for events: new value
+	Field     string // for events: which field changed
+	Value     string // for events: new value
 	Edges     []Edge
 	Slot      string
 	Timestamp time.Time // if set, use this instead of time.Now()

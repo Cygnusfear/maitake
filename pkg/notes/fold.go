@@ -25,20 +25,22 @@ func FoldEvents(creation *Note, events []*Note) *State {
 
 func foldEventsSorted(creation *Note, events []*Note) *State {
 	state := &State{
-		ID:        creation.ID,
-		Kind:      creation.Kind,
-		Status:    "open", // default
-		Title:     creation.Title,
-		Type:      creation.Type,
-		Priority:  creation.Priority,
-		Assignee:  creation.Assignee,
-		Tags:      copyStrings(creation.Tags),
-		Body:      creation.Body,
-		Resolved:  creation.Resolved,
-		Branch:    creation.Branch,
-		CreatedAt: creation.Time,
-		UpdatedAt: creation.Time,
-		NoteOID:   creation.OID,
+		ID:          creation.ID,
+		Kind:        creation.Kind,
+		Status:      "open", // default
+		Title:       creation.Title,
+		Type:        creation.Type,
+		Priority:    creation.Priority,
+		Assignee:    creation.Assignee,
+		Tags:        copyStrings(creation.Tags),
+		Body:        creation.Body,
+		Resolved:    creation.Resolved,
+		Author:      creation.Author,
+		AuthorEmail: creation.AuthorEmail,
+		Branch:      creation.Branch,
+		CreatedAt:   creation.Time,
+		UpdatedAt:   creation.Time,
+		NoteOID:     creation.OID,
 	}
 
 	// Extract title from body if not set
@@ -230,21 +232,23 @@ func extractTitle(body string) string {
 // ToSummary converts a State to a StateSummary.
 func ToSummary(s *State) StateSummary {
 	return StateSummary{
-		ID:        s.ID,
-		Kind:      s.Kind,
-		Status:    s.Status,
-		Type:      s.Type,
-		Priority:  s.Priority,
-		Title:     s.Title,
-		Tags:      s.Tags,
-		Targets:   s.Targets,
-		Deps:      s.Deps,
-		Links:     s.Links,
-		Assignee:  s.Assignee,
-		Resolved:  s.Resolved,
-		Branch:    s.Branch,
-		CreatedAt: s.CreatedAt,
-		UpdatedAt: s.UpdatedAt,
+		ID:          s.ID,
+		Kind:        s.Kind,
+		Status:      s.Status,
+		Type:        s.Type,
+		Priority:    s.Priority,
+		Title:       s.Title,
+		Tags:        s.Tags,
+		Targets:     s.Targets,
+		Deps:        s.Deps,
+		Links:       s.Links,
+		Assignee:    s.Assignee,
+		Resolved:    s.Resolved,
+		Author:      s.Author,
+		AuthorEmail: s.AuthorEmail,
+		Branch:      s.Branch,
+		CreatedAt:   s.CreatedAt,
+		UpdatedAt:   s.UpdatedAt,
 	}
 }
 

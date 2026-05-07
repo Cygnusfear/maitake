@@ -361,6 +361,18 @@ func TestAdversarial_Refs_HasRefExisting(t *testing.T) {
 	}
 }
 
+func TestAdversarial_Config_GetUserName(t *testing.T) {
+	repo := setupGitRepo(t)
+
+	name, err := repo.GetUserName()
+	if err != nil {
+		t.Fatalf("GetUserName: %v", err)
+	}
+	if name != "Test" {
+		t.Errorf("GetUserName = %q, want Test", name)
+	}
+}
+
 func TestAdversarial_Refs_HasRefNonExisting(t *testing.T) {
 	repo := setupGitRepo(t)
 

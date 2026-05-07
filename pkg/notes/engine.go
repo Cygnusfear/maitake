@@ -294,6 +294,7 @@ func (e *RealEngine) Create(opts CreateOptions) (*Note, error) {
 		Time:      now,
 		Branch:    e.currentGitBranch(),
 	}
+	e.stampAuthor(note)
 
 	// Auto-add target edges
 	for _, target := range opts.Targets {
@@ -428,6 +429,7 @@ func (e *RealEngine) Append(opts AppendOptions) (*Note, error) {
 		Time:      appendNow,
 		Branch:    e.currentGitBranch(),
 	}
+	e.stampAuthor(note)
 
 	// Comments get their own ID so they can be targeted by edit events
 	if opts.Kind == "comment" {

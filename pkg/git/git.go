@@ -155,6 +155,11 @@ func (repo *GitRepo) GetUserEmail() (string, error) {
 	return repo.runGitCommand("config", "user.email")
 }
 
+// GetUserName returns the name that the user has configured for git.
+func (repo *GitRepo) GetUserName() (string, error) {
+	return repo.runGitCommand("config", "user.name")
+}
+
 // GetUserSigningKey returns the key id the user has configured for
 // sigining git artifacts.
 func (repo *GitRepo) GetUserSigningKey() (string, error) {

@@ -12,15 +12,15 @@ func ts(s string) time.Time {
 
 func TestFold_CreationOnly(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
-		Title:     "Fix auth",
-		Type:      "task",
-		Priority:  1,
-		Assignee:  "Alice",
-		Tags:      []string{"auth"},
-		Body:      "Fix the race condition.",
-		Time: ts("2026-03-01T10:00:00Z"),
+		ID:       "tre-5c4a",
+		Kind:     "ticket",
+		Title:    "Fix auth",
+		Type:     "task",
+		Priority: 1,
+		Assignee: "Alice",
+		Tags:     []string{"auth"},
+		Body:     "Fix the race condition.",
+		Time:     ts("2026-03-01T10:00:00Z"),
 		Edges: []Edge{
 			{Type: "targets", Target: EdgeTarget{Kind: "path", Ref: "src/auth.ts"}},
 		},
@@ -47,20 +47,20 @@ func TestFold_CreationOnly(t *testing.T) {
 
 func TestFold_StatusChanges(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
+		ID:   "tre-5c4a",
+		Kind: "ticket",
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
 	events := []*Note{
 		{
-			Kind:      "event",
-			Edges:     []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
-			Time: ts("2026-03-01T11:00:00Z"),
+			Kind:  "event",
+			Edges: []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
+			Time:  ts("2026-03-01T11:00:00Z"),
 		},
 		{
-			Kind:      "event",
-			Edges:     []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
-			Time: ts("2026-03-01T12:00:00Z"),
+			Kind:  "event",
+			Edges: []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
+			Time:  ts("2026-03-01T12:00:00Z"),
 		},
 	}
 
@@ -72,20 +72,20 @@ func TestFold_StatusChanges(t *testing.T) {
 
 func TestFold_ReopenAfterClose(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
+		ID:   "tre-5c4a",
+		Kind: "ticket",
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
 	events := []*Note{
 		{
-			Kind:      "event",
-			Edges:     []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
-			Time: ts("2026-03-01T11:00:00Z"),
+			Kind:  "event",
+			Edges: []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
+			Time:  ts("2026-03-01T11:00:00Z"),
 		},
 		{
-			Kind:      "event",
-			Edges:     []Edge{{Type: "reopens", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
-			Time: ts("2026-03-01T12:00:00Z"),
+			Kind:  "event",
+			Edges: []Edge{{Type: "reopens", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
+			Time:  ts("2026-03-01T12:00:00Z"),
 		},
 	}
 
@@ -97,37 +97,37 @@ func TestFold_ReopenAfterClose(t *testing.T) {
 
 func TestFold_FieldChanges(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
-		Priority:  2,
-		Assignee:  "Alice",
-		Tags:      []string{"auth"},
-		Time: ts("2026-03-01T10:00:00Z"),
+		ID:       "tre-5c4a",
+		Kind:     "ticket",
+		Priority: 2,
+		Assignee: "Alice",
+		Tags:     []string{"auth"},
+		Time:     ts("2026-03-01T10:00:00Z"),
 	}
 	events := []*Note{
 		{
-			Kind:      "event",
-			Field:     "priority",
-			Value:     "0",
-			Time: ts("2026-03-01T11:00:00Z"),
+			Kind:  "event",
+			Field: "priority",
+			Value: "0",
+			Time:  ts("2026-03-01T11:00:00Z"),
 		},
 		{
-			Kind:      "event",
-			Field:     "assignee",
-			Value:     "Bob",
-			Time: ts("2026-03-01T11:01:00Z"),
+			Kind:  "event",
+			Field: "assignee",
+			Value: "Bob",
+			Time:  ts("2026-03-01T11:01:00Z"),
 		},
 		{
-			Kind:      "event",
-			Field:     "tags",
-			Value:     "+critical",
-			Time: ts("2026-03-01T11:02:00Z"),
+			Kind:  "event",
+			Field: "tags",
+			Value: "+critical",
+			Time:  ts("2026-03-01T11:02:00Z"),
 		},
 		{
-			Kind:      "event",
-			Field:     "tags",
-			Value:     "-auth",
-			Time: ts("2026-03-01T11:03:00Z"),
+			Kind:  "event",
+			Field: "tags",
+			Value: "-auth",
+			Time:  ts("2026-03-01T11:03:00Z"),
 		},
 	}
 
@@ -148,19 +148,19 @@ func TestFold_FieldChanges(t *testing.T) {
 
 func TestFold_Comments(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
+		ID:   "tre-5c4a",
+		Kind: "ticket",
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
 	events := []*Note{
 		{
-			Kind:      "comment",
-			Body:      "First comment",
+			Kind: "comment",
+			Body: "First comment",
 			Time: ts("2026-03-01T11:00:00Z"),
 		},
 		{
-			Kind:      "comment",
-			Body:      "Second comment",
+			Kind: "comment",
+			Body: "Second comment",
 			Time: ts("2026-03-01T12:00:00Z"),
 		},
 	}
@@ -186,10 +186,10 @@ func TestFold_DepsAndLinks(t *testing.T) {
 	}
 	events := []*Note{
 		{
-			Kind:      "event",
-			Field:     "deps",
-			Value:     "+fix-9999",
-			Time: ts("2026-03-01T11:00:00Z"),
+			Kind:  "event",
+			Field: "deps",
+			Value: "+fix-9999",
+			Time:  ts("2026-03-01T11:00:00Z"),
 		},
 	}
 
@@ -204,21 +204,21 @@ func TestFold_DepsAndLinks(t *testing.T) {
 
 func TestFold_OutOfOrderTimestamps(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
+		ID:   "tre-5c4a",
+		Kind: "ticket",
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
 	// Events in wrong timestamp order — fold should sort them
 	events := []*Note{
 		{
-			Kind:      "event",
-			Edges:     []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
-			Time: ts("2026-03-01T12:00:00Z"),
+			Kind:  "event",
+			Edges: []Edge{{Type: "closes", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
+			Time:  ts("2026-03-01T12:00:00Z"),
 		},
 		{
-			Kind:      "event",
-			Edges:     []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
-			Time: ts("2026-03-01T11:00:00Z"),
+			Kind:  "event",
+			Edges: []Edge{{Type: "starts", Target: EdgeTarget{Kind: "note", Ref: "tre-5c4a"}}},
+			Time:  ts("2026-03-01T11:00:00Z"),
 		},
 	}
 
@@ -231,9 +231,9 @@ func TestFold_OutOfOrderTimestamps(t *testing.T) {
 
 func TestFold_TitleFromBody(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
-		Body:      "# Fix the auth race condition\n\nDetails here.",
+		ID:   "tre-5c4a",
+		Kind: "ticket",
+		Body: "# Fix the auth race condition\n\nDetails here.",
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
 
@@ -245,14 +245,14 @@ func TestFold_TitleFromBody(t *testing.T) {
 
 func TestFold_UpdatedAt(t *testing.T) {
 	creation := &Note{
-		ID:        "tre-5c4a",
-		Kind:      "ticket",
+		ID:   "tre-5c4a",
+		Kind: "ticket",
 		Time: ts("2026-03-01T10:00:00Z"),
 	}
 	events := []*Note{
 		{
-			Kind:      "comment",
-			Body:      "hello",
+			Kind: "comment",
+			Body: "hello",
 			Time: ts("2026-03-05T15:00:00Z"),
 		},
 	}
@@ -265,10 +265,10 @@ func TestFold_UpdatedAt(t *testing.T) {
 
 func TestFold_ArtifactBornClosed(t *testing.T) {
 	creation := &Note{
-		ID:        "rev-1234",
-		Kind:      "review",
-		Status:    "closed",
-		Time: ts("2026-03-01T10:00:00Z"),
+		ID:     "rev-1234",
+		Kind:   "review",
+		Status: "closed",
+		Time:   ts("2026-03-01T10:00:00Z"),
 	}
 
 	state := FoldEvents(creation, nil)
@@ -355,6 +355,22 @@ func TestFold_BranchFromCreation(t *testing.T) {
 	}
 }
 
+func TestFold_AuthorFromCreation(t *testing.T) {
+	creation := &Note{
+		ID:          "t-author",
+		Kind:        "ticket",
+		Author:      "Env Agent",
+		AuthorEmail: "env-agent@example.com",
+	}
+	state := FoldEvents(creation, nil)
+	if state.Author != "Env Agent" {
+		t.Errorf("Author = %q, want Env Agent", state.Author)
+	}
+	if state.AuthorEmail != "env-agent@example.com" {
+		t.Errorf("AuthorEmail = %q, want env-agent@example.com", state.AuthorEmail)
+	}
+}
+
 func TestFold_NoBranch(t *testing.T) {
 	creation := &Note{
 		ID:   "t-nobr",
@@ -372,17 +388,17 @@ func TestFold_NoBranch(t *testing.T) {
 
 func TestToSummary_IncludesDepsLinksAssigneeBranch(t *testing.T) {
 	state := &State{
-		ID:       "t-sum",
-		Kind:     "ticket",
-		Status:   "open",
-		Priority: 1,
-		Title:    "Test",
-		Tags:     []string{"auth"},
-		Targets:  []string{"src/auth.ts"},
-		Deps:     []string{"dep-1", "dep-2"},
-		Links:    []string{"link-1"},
-		Assignee: "Alice",
-		Branch:   "feature/auth",
+		ID:        "t-sum",
+		Kind:      "ticket",
+		Status:    "open",
+		Priority:  1,
+		Title:     "Test",
+		Tags:      []string{"auth"},
+		Targets:   []string{"src/auth.ts"},
+		Deps:      []string{"dep-1", "dep-2"},
+		Links:     []string{"link-1"},
+		Assignee:  "Alice",
+		Branch:    "feature/auth",
 		CreatedAt: ts("2026-03-01T10:00:00Z"),
 		UpdatedAt: ts("2026-03-05T15:00:00Z"),
 	}

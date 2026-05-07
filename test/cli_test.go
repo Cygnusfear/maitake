@@ -770,6 +770,19 @@ func TestCLI_JSON_BranchStamped(t *testing.T) {
 	}
 }
 
+func TestCLI_JSON_AuthorStampedFromGitEnv(t *testing.T) {
+	dir := setupTestRepo(t)
+	mai(t, dir, "ticket", "Author test")
+
+	out := mai(t, dir, "--json", "ls")
+	if !strings.Contains(out, `"author": "Test"`) {
+		t.Errorf("--json ls should include author from git env:\n%s", out)
+	}
+	if !strings.Contains(out, `"authorEmail": "test@test.com"`) {
+		t.Errorf("--json ls should include authorEmail from git env:\n%s", out)
+	}
+}
+
 // === -C FLAG ===
 
 func TestCLI_CFlag(t *testing.T) {

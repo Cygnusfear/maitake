@@ -148,6 +148,9 @@ type Repo interface {
 	// GetUserEmail returns the email address that the user has used to configure git.
 	GetUserEmail() (string, error)
 
+	// GetUserName returns the name that the user has configured for git.
+	GetUserName() (string, error)
+
 	// GetUserSigningKey returns the key id the user has configured for
 	// sigining git artifacts.
 	GetUserSigningKey() (string, error)
