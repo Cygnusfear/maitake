@@ -1,0 +1,19 @@
+skills/mai-harness/SKILL.md
+  s_6bb25919097012::t_c04a539ec516cd 215-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "5e1cb5dbb94174368e1098f4e28510644ecd065d",
+  "prompts": {},
+  "sessions": {
+    "s_6bb25919097012": {
+      "agent_id": {
+        "tool": "Annie Asteroid Mack",
+        "id": "019e095c-6b11-7429-baa0-c3fc67811c57",
+        "model": "anthropic/claude-opus-4-7"
+      },
+      "human_author": "Alexander Mangel <cygnusfear@gmail.com>"
+    }
+  }
+}
