@@ -37,7 +37,7 @@ without conflicts via set-union.
 
 💼 **Forge-agnostic.**</br> Sync issues, PRs, docs to anything: GitHub, Forgejo, Gitea, or your own server via hooks. Switch forges without losing a single event. The decision trail of _why_ and _how_ stays with your codebase forever.
 
-🍄‍🟫 **A substrate for other apps.**</br> `maitake` is a primitive you want to build on. A [kanban board](https://github.com/Cygnusfear/ramboard), [multi-agent coordinator](https://github.com/Cygnusfear/pi-extensions), a diff viewer, an Obsidian clone — all powered by `maitake` underneath.
+🍄‍🟫 **A substrate for other apps.**</br> `maitake` is a primitive you want to build on. A [kanban board](https://github.com/Cygnusfear/maiboard), [multi-agent coordinator](https://github.com/Cygnusfear/pi-extensions), a diff viewer, an Obsidian clone — all powered by `maitake` underneath.
 
 ## 30-second tour
 
