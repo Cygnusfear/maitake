@@ -1,0 +1,19 @@
+README.md
+  s_e0564c7ae48f67::t_b28c7baa8fc05b 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "13babf357b2101331e9f6346bdb44c07934dfe9f",
+  "prompts": {},
+  "sessions": {
+    "s_e0564c7ae48f67": {
+      "agent_id": {
+        "tool": "Dimitar Eclipse Shore",
+        "id": "019e2ade-9db5-714d-8a4d-59a5d1ab1006",
+        "model": "anthropic/claude-opus-4-7"
+      },
+      "human_author": "Alexander Mangel <cygnusfear@gmail.com>"
+    }
+  }
+}
